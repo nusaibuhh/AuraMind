@@ -31,11 +31,11 @@ class ApiService {
         if (_token != null) 'Authorization': 'Bearer $_token',
       };
 
-  Future<Map<String, dynamic>> _handleResponse(http.Response response) async {
+  Future<dynamic> _handleResponse(http.Response response) async {
     final body = response.body.isNotEmpty ? jsonDecode(response.body) : null;
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      return body is Map<String, dynamic> ? body : {};
+      return body ?? {};
     }
 
     final detail = body is Map ? body['detail'] : null;
@@ -174,6 +174,70 @@ class ApiService {
           .map((c) => _hexColor(c as String))
           .toList(),
     );
+  }
+
+  // ===== Sleep Tracking Endpoints =====
+
+  Future<List<dynamic>> getSleepLogs({int days = 30}) async {
+    final response = await _client.get(
+      Uri.parse('${ApiConfig.baseUrl}/sleep/logs?days=$days'),
+      headers: _headers,
+    );
+    final result = await _handleResponse(response);
+    return result is List ? result : [];
+  }
+
+  Future<Map<String, dynamic>> getSleepMetrics({int days = 7}) async {
+    final response = await _client.get(
+      Uri.parse('${ApiConfig.baseUrl}/sleep/metrics?days=$days'),
+      headers: _headers,
+    );
+    final result = await _handleResponse(response);
+    return result is Map<String, dynamic> ? result : {};
+  }
+
+  Future<List<dynamic>> getSleepMoodCorrelation({int days = 7}) async {
+    final response = await _client.get(
+      Uri.parse('${ApiConfig.baseUrl}/sleep/correlation?days=$days'),
+      headers: _headers,
+    );
+    final result = await _handleResponse(response);
+    return result is List ? result : [];
+  }
+
+  Future<List<dynamic>> getWellbeingWarnings() async {
+    final response = await _client.get(
+      Uri.parse('${ApiConfig.baseUrl}/sleep/warnings'),
+      headers: _headers,
+    );
+    final result = await _handleResponse(response);
+    return result is List ? result : [];
+  }
+
+  Future<Map<String, dynamic>> saveSleepLog(Map<String, dynamic> payload) async {
+    final response = await _client.post(
+      Uri.parse('${ApiConfig.baseUrl}/sleep/log'),
+      headers: _headers,
+      body: jsonEncode(payload),
+    );
+    final result = await _handleResponse(response);
+    return result is Map<String, dynamic> ? result : {};
+  }
+
+  Future<void> dismissWarning(String warningId) async {
+    final response = await _client.post(
+      Uri.parse('${ApiConfig.baseUrl}/sleep/warnings/$warningId/dismiss'),
+      headers: _headers,
+    );
+    await _handleResponse(response);
+  }
+
+  Future<void> deleteSleepLog(String logId) async {
+    final response = await _client.delete(
+      Uri.parse('${ApiConfig.baseUrl}/sleep/log/$logId'),
+      headers: _headers,
+    );
+    await _handleResponse(response);
   }
 
   static Color _hexColor(String hex) {

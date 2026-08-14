@@ -1,13 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../models/question.dart';
 import '../../models/theme_palette.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/questionnaire_provider.dart';
 import '../../providers/theme_provider.dart';
-import '../../utils/scoring.dart';
-import '../../widgets/theme_card.dart';
 import '../home/home_screen.dart';
 
 class ThemeSelectionScreen extends StatefulWidget {
