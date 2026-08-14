@@ -5,6 +5,9 @@ import '../../providers/auth_provider.dart';
 import '../auth/login_screen.dart';
 import '../../providers/theme_provider.dart';
 import '../checkin/intro_screen.dart';
+import '../sleep/log_sleep_screen.dart';
+import '../sleep/sleep_insights_screen.dart';
+import '../sleep/sleep_history_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -630,6 +633,7 @@ class _BottomNavBar extends StatelessWidget {
     final theme = Theme.of(context);
     final items = [
       (Icons.home_rounded, 'Home'),
+      (Icons.bedtime_rounded, 'Sleep'),
       (Icons.spa_outlined, 'Exercises'),
       (Icons.menu_book_outlined, 'Journal'),
       (Icons.person_outline_rounded, 'Profile'),
@@ -657,7 +661,14 @@ class _BottomNavBar extends StatelessWidget {
 
           return Expanded(
             child: InkWell(
-              onTap: () => onTap(index),
+              onTap: () {
+                onTap(index);
+                // Handle navigation for sleep tab
+                if (index == 1) {
+                  // Navigate to sleep tracking
+                  _handleSleepNavigation(context);
+                }
+              },
               borderRadius: BorderRadius.circular(16),
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 6),
@@ -680,6 +691,72 @@ class _BottomNavBar extends StatelessWidget {
             ),
           );
         }),
+      ),
+    );
+  }
+
+  void _handleSleepNavigation(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => Container(
+        color: Colors.white,
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  'Sleep Tracking',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.edit),
+                title: const Text('Log Sleep'),
+                subtitle: const Text('Record your sleep duration and quality'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const LogSleepScreen(),
+                    ),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.insights),
+                title: const Text('Sleep & Mood Insights'),
+                subtitle: const Text('View your sleep patterns and wellness'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const SleepInsightsScreen(),
+                    ),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.history),
+                title: const Text('Sleep History'),
+                subtitle: const Text('View all your past sleep logs'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const SleepHistoryScreen(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        ),
       ),
     );
   }

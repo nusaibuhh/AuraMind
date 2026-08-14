@@ -11,5 +11,5 @@ void main() {
       statusBarIconBrightness: Brightness.dark,
     ),
   );
-  runApp(const AuraMindApp());
+  runApp(AuraMindApp());
 }
