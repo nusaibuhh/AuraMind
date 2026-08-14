@@ -55,8 +55,8 @@ class _AnalyzingScreenState extends State<AnalyzingScreen>
                 Container(
                   width: 116,
                   height: 116,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE7F2E5),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFE7F2E5),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(

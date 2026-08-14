@@ -341,7 +341,7 @@ class _WellbeingSection extends StatelessWidget {
                 label: 'Average Sleep',
                 value: '${metrics.averageSleep.toStringAsFixed(1)}h',
                 unit: '05m',
-                trend: '${sleepTrendText}${(metrics.getTrend().abs()).toStringAsFixed(1)}h',
+                trend: '$sleepTrendText${(metrics.getTrend().abs()).toStringAsFixed(1)}h',
                 trendColor: sleepTrendColor,
               ),
             ),
@@ -609,7 +609,7 @@ class _LineChartPainter extends CustomPainter {
       axisPaint,
     );
     canvas.drawLine(
-      Offset(padding, padding),
+      const Offset(padding, padding),
       Offset(padding, size.height - padding),
       axisPaint,
     );

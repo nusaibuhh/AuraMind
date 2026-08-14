@@ -111,33 +111,33 @@ class _HomeScreenState extends State<HomeScreen> {
                         subtitle: 'Small actions to keep your day steady',
                       ),
                       const SizedBox(height: 12),
-                      Row(
+                      const Row(
                         children: [
                           Expanded(
                             child: _RecommendationTile(
-                              background: const Color(0xFFEAF3E8),
+                              background: Color(0xFFEAF3E8),
                               icon: Icons.spa_outlined,
-                              iconColor: const Color(0xFF6D8E71),
+                              iconColor: Color(0xFF6D8E71),
                               title: 'Breathing\nExercise',
                               subtitle: '3 min',
                             ),
                           ),
-                          const SizedBox(width: 12),
+                          SizedBox(width: 12),
                           Expanded(
                             child: _RecommendationTile(
-                              background: const Color(0xFFEAF2FB),
+                              background: Color(0xFFEAF2FB),
                               icon: Icons.menu_book_outlined,
-                              iconColor: const Color(0xFF5A87B3),
+                              iconColor: Color(0xFF5A87B3),
                               title: 'Journal',
                               subtitle: 'Write your\nthoughts',
                             ),
                           ),
-                          const SizedBox(width: 12),
+                          SizedBox(width: 12),
                           Expanded(
                             child: _RecommendationTile(
-                              background: const Color(0xFFF0EBF8),
+                              background: Color(0xFFF0EBF8),
                               icon: Icons.local_florist_outlined,
-                              iconColor: const Color(0xFF8A74B8),
+                              iconColor: Color(0xFF8A74B8),
                               title: 'Grounding\n5-4-3-2-1',
                               subtitle: 'Anxiety relief',
                             ),
