@@ -69,3 +69,4 @@ lib/
 4. View the "Analyzing..." transition screen
 5. Pick a recommended colour theme
 6. Land on the themed home screen
+
