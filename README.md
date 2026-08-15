@@ -69,3 +69,48 @@ lib/
 4. View the "Analyzing..." transition screen
 5. Pick a recommended colour theme
 6. Land on the themed home screen
+
+
+
+## Module 1 — Longitudinal Mood Analytics
+
+Module 1 provides longitudinal mood analytics and trend tracking based on
+timestamped mental-health check-ins.
+
+### Features
+
+- Timestamped mood check-in storage
+- Rolling 7-day, 30-day and 90-day analytics
+- Interactive mood trend visualization
+- Downward mood trajectory detection
+- Progressive intervention-tier escalation
+- Wellbeing exercise suggestions
+
+### Backend
+
+The analytics endpoint is:
+
+```text
+GET /mood/analytics?days=7
+GET /mood/analytics?days=30
+GET /mood/analytics?days=90
+
+The backend stores mood analytics data in SQLite and uses a Python analysis
+pipeline to detect sustained downward mood trends.
+
+### Mood Analytics Flow
+
+Mood Check-in
+      ↓
+SQLite Storage
+      ↓
+FastAPI /mood/analytics
+      ↓
+Mood Analytics Python Pipeline
+      ↓
+Trend Detection
+      ↓
+Intervention Tier
+      ↓
+Flutter Mood Analytics Screen
+
