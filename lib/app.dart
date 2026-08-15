@@ -11,6 +11,7 @@ import 'providers/questionnaire_provider.dart';
 import 'providers/theme_provider.dart';
 
 import 'providers/sleep_provider.dart';
+import 'providers/mood_analytics_provider.dart';
 
 import 'screens/auth/login_screen.dart';
 
@@ -52,6 +53,9 @@ class AuraMindApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => QuestionnaireProvider()),
 
         ChangeNotifierProvider(create: (_) => SleepProvider(_sharedApiService)),
+        ChangeNotifierProvider(
+          create: (_) => MoodAnalyticsProvider(_sharedApiService),
+        ),
 
       ],
 
