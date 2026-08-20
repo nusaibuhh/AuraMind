@@ -254,6 +254,46 @@ class ApiService {
     await _handleResponse(response);
   }
 
+  // ===== Breathing Exercise Endpoints =====
+
+  Future<Map<String, dynamic>> saveBreathingSession(
+    Map<String, dynamic> payload,
+  ) async {
+    final response = await _client.post(
+      Uri.parse('${ApiConfig.baseUrl}/breathing/session'),
+      headers: _headers,
+      body: jsonEncode(payload),
+    );
+    final result = await _handleResponse(response);
+    return result is Map<String, dynamic> ? result : {};
+  }
+
+  Future<List<dynamic>> getBreathingHistory({int limit = 30}) async {
+    final response = await _client.get(
+      Uri.parse('${ApiConfig.baseUrl}/breathing/history?limit=$limit'),
+      headers: _headers,
+    );
+    final result = await _handleResponse(response);
+    return result is List ? result : [];
+  }
+
+  Future<Map<String, dynamic>> getBreathingMetrics() async {
+    final response = await _client.get(
+      Uri.parse('${ApiConfig.baseUrl}/breathing/metrics'),
+      headers: _headers,
+    );
+    final result = await _handleResponse(response);
+    return result is Map<String, dynamic> ? result : {};
+  }
+
+  Future<void> deleteBreathingSession(String sessionId) async {
+    final response = await _client.delete(
+      Uri.parse('${ApiConfig.baseUrl}/breathing/session/$sessionId'),
+      headers: _headers,
+    );
+    await _handleResponse(response);
+  }
+
   static Color _hexColor(String hex) {
     final cleaned = hex.replaceFirst('#', '');
     return Color(int.parse('FF$cleaned', radix: 16));

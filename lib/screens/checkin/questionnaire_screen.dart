@@ -44,7 +44,6 @@ class _QuestionnaireView extends StatelessWidget {
   Widget build(BuildContext context) {
     final provider = context.watch<QuestionnaireProvider>();
     final theme = Theme.of(context);
-    final primary = theme.colorScheme.primary;
     final question = provider.currentQuestion;
     final isLast = provider.currentIndex == provider.totalQuestions - 1;
 

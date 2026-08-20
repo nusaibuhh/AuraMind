@@ -8,6 +8,7 @@ import '../checkin/intro_screen.dart';
 import '../sleep/log_sleep_screen.dart';
 import '../sleep/sleep_insights_screen.dart';
 import '../sleep/sleep_history_screen.dart';
+import '../breathing/breathing_screen.dart';
 import 'mood_analytics_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -123,19 +124,26 @@ class _HomeScreenState extends State<HomeScreen> {
                         subtitle: 'Small actions to keep your day steady',
                       ),
                       const SizedBox(height: 12),
-                      const Row(
+                      Row(
                         children: [
                           Expanded(
                             child: _RecommendationTile(
-                              background: Color(0xFFEAF3E8),
+                              background: const Color(0xFFEAF3E8),
                               icon: Icons.spa_outlined,
-                              iconColor: Color(0xFF6D8E71),
+                              iconColor: const Color(0xFF6D8E71),
                               title: 'Breathing\nExercise',
                               subtitle: '3 min',
+                              onTap: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => const BreathingScreen(),
+                                  ),
+                                );
+                              },
                             ),
                           ),
-                          SizedBox(width: 12),
-                          Expanded(
+                          const SizedBox(width: 12),
+                          const Expanded(
                             child: _RecommendationTile(
                               background: Color(0xFFEAF2FB),
                               icon: Icons.menu_book_outlined,
@@ -144,8 +152,8 @@ class _HomeScreenState extends State<HomeScreen> {
                               subtitle: 'Write your\nthoughts',
                             ),
                           ),
-                          SizedBox(width: 12),
-                          Expanded(
+                          const SizedBox(width: 12),
+                          const Expanded(
                             child: _RecommendationTile(
                               background: Color(0xFFF0EBF8),
                               icon: Icons.local_florist_outlined,
@@ -414,6 +422,7 @@ class _RecommendationTile extends StatelessWidget {
     required this.iconColor,
     required this.title,
     required this.subtitle,
+    this.onTap,
   });
 
   final Color background;
@@ -421,51 +430,59 @@ class _RecommendationTile extends StatelessWidget {
   final Color iconColor;
   final String title;
   final String subtitle;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Container(
-      height: 150,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: background,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.75)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.7),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, color: iconColor, size: 22),
+        child: Container(
+          height: 150,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: background,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.75)),
           ),
-          const Spacer(),
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: theme.colorScheme.onSurface,
-              height: 1.2,
-            ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.7),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: iconColor, size: 22),
+              ),
+              const Spacer(),
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: theme.colorScheme.onSurface,
+                  height: 1.2,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.58),
+                  height: 1.2,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 6),
-          Text(
-            subtitle,
-            style: TextStyle(
-              fontSize: 12,
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.58),
-              height: 1.2,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -759,6 +776,13 @@ class _BottomNavBar extends StatelessWidget {
                 if (index == 1) {
                   // Navigate to sleep tracking
                   _handleSleepNavigation(context);
+                } else if (index == 2) {
+                  // Navigate to breathing exercise
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const BreathingScreen(),
+                    ),
+                  );
                 }
               },
               borderRadius: BorderRadius.circular(16),
