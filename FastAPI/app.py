@@ -380,13 +380,17 @@ def api_clear_selected_theme(authorization: Optional[str] = Header(None)):
 # POST /startGroundingSession
 # Body: { "user_id": "u1" }
 @app.post("/startGroundingSession")
-def start_grounding_session(req: StartSessionRequest):
+def start_grounding_session(
+    req: StartSessionRequest,
+    authorization: Optional[str] = Header(None),
+):
+    user = require_user(authorization)
     session_id = uuid.uuid4().hex
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
     c.execute(
         "INSERT INTO GROUNDING_SESSIONS VALUES (?, ?, ?, 0)",
-        (session_id, req.user_id, now()),
+        (session_id, user["id"], now()),
     )
     conn.commit()
     conn.close()
@@ -399,10 +403,32 @@ def start_grounding_session(req: StartSessionRequest):
 # Body: { "session_id": "...", "category": "sight", "items": ["tree","sky","lamp","chair","phone"] }
 # category must be one of: sight, touch, hear, smell, taste
 @app.post("/addGroundingEntries")
-def add_grounding_entries(req: AddEntriesRequest):
+def add_grounding_entries(
+    req: AddEntriesRequest,
+    authorization: Optional[str] = Header(None),
+):
+    user = require_user(authorization)
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-    for item_text in req.items:
+    c.execute(
+        "SELECT id FROM GROUNDING_SESSIONS WHERE id=? AND user_id=?",
+        (req.session_id, user["id"]),
+    )
+    if c.fetchone() is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Grounding session not found")
+    if req.category not in {"sight", "touch", "hear", "smell", "taste"}:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Invalid grounding category")
+    expected_count = {"sight": 5, "touch": 4, "hear": 3, "smell": 2, "taste": 1}[req.category]
+    items = [item.strip() for item in req.items if item.strip()]
+    if len(items) != expected_count:
+        conn.close()
+        raise HTTPException(
+            status_code=400,
+            detail=f"{req.category} requires exactly {expected_count} entries",
+        )
+    for item_text in items:
         c.execute(
             "INSERT INTO GROUNDING_ENTRIES VALUES (?, ?, ?, ?)",
             (uuid.uuid4().hex, req.session_id, req.category, item_text),
@@ -421,10 +447,17 @@ def add_grounding_entries(req: AddEntriesRequest):
 # ---- 3. Get a full session with all its entries -------------------------
 # GET /getGroundingSession/<session_id>
 @app.get("/getGroundingSession/{session_id}")
-def get_grounding_session(session_id: str):
+def get_grounding_session(
+    session_id: str,
+    authorization: Optional[str] = Header(None),
+):
+    user = require_user(authorization)
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-    c.execute("SELECT * FROM GROUNDING_SESSIONS WHERE id=?", (session_id,))
+    c.execute(
+        "SELECT * FROM GROUNDING_SESSIONS WHERE id=? AND user_id=?",
+        (session_id, user["id"]),
+    )
     session_row = c.fetchone()
 
     if session_row is None:
@@ -451,7 +484,13 @@ def get_grounding_session(session_id: str):
 # ---- 4. Get a user's past grounding sessions -----------------------------
 # GET /getGroundingHistory/<user_id>
 @app.get("/getGroundingHistory/{user_id}")
-def get_grounding_history(user_id: str):
+def get_grounding_history(
+    user_id: str,
+    authorization: Optional[str] = Header(None),
+):
+    user = require_user(authorization)
+    if user_id != user["id"]:
+        raise HTTPException(status_code=403, detail="You can only view your own history")
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
     c.execute(

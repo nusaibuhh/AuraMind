@@ -134,6 +134,42 @@ class ApiService {
     await _handleResponse(response);
   }
 
+  Future<String> startGroundingSession(String userId) async {
+    final response = await _client.post(
+      Uri.parse('${ApiConfig.baseUrl}/startGroundingSession'),
+      headers: _headers,
+      body: jsonEncode({'user_id': userId}),
+    );
+    final data = await _handleResponse(response) as Map<String, dynamic>;
+    return data['session_id'] as String;
+  }
+
+  Future<void> addGroundingEntries({
+    required String sessionId,
+    required String category,
+    required List<String> items,
+  }) async {
+    final response = await _client.post(
+      Uri.parse('${ApiConfig.baseUrl}/addGroundingEntries'),
+      headers: _headers,
+      body: jsonEncode({
+        'session_id': sessionId,
+        'category': category,
+        'items': items,
+      }),
+    );
+    await _handleResponse(response);
+  }
+
+  Future<Map<String, dynamic>> getGroundingSession(String sessionId) async {
+    final response = await _client.get(
+      Uri.parse('${ApiConfig.baseUrl}/getGroundingSession/$sessionId'),
+      headers: _headers,
+    );
+    final data = await _handleResponse(response);
+    return data as Map<String, dynamic>;
+  }
+
   Future<ThemePalette?> fetchSelectedTheme() async {
     final response = await _client.get(
       Uri.parse('${ApiConfig.baseUrl}/themes/selected/me'),

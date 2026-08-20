@@ -5,6 +5,15 @@ import '../../providers/auth_provider.dart';
 import '../auth/login_screen.dart';
 import '../../providers/theme_provider.dart';
 import '../checkin/intro_screen.dart';
+<<<<<<< Updated upstream
+=======
+import '../sleep/log_sleep_screen.dart';
+import '../sleep/sleep_insights_screen.dart';
+import '../sleep/sleep_history_screen.dart';
+import '../breathing/breathing_screen.dart';
+import '../grounding/grounding_screen.dart';
+import 'mood_analytics_screen.dart';
+>>>>>>> Stashed changes
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -137,6 +146,13 @@ class _HomeScreenState extends State<HomeScreen> {
                               iconColor: const Color(0xFF8A74B8),
                               title: 'Grounding\n5-4-3-2-1',
                               subtitle: 'Anxiety relief',
+                              onTap: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => const GroundingScreen(),
+                                  ),
+                                );
+                              },
                             ),
                           ),
                         ],
