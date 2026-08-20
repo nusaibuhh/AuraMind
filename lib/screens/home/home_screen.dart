@@ -5,15 +5,14 @@ import '../../providers/auth_provider.dart';
 import '../auth/login_screen.dart';
 import '../../providers/theme_provider.dart';
 import '../checkin/intro_screen.dart';
-<<<<<<< Updated upstream
-=======
 import '../sleep/log_sleep_screen.dart';
 import '../sleep/sleep_insights_screen.dart';
 import '../sleep/sleep_history_screen.dart';
 import '../breathing/breathing_screen.dart';
 import '../grounding/grounding_screen.dart';
 import 'mood_analytics_screen.dart';
->>>>>>> Stashed changes
+
+import 'mood_analytics_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -112,6 +111,17 @@ class _HomeScreenState extends State<HomeScreen> {
                         },
                       ),
                       const SizedBox(height: 18),
+                      _MoodInsightsCard(
+                        accent: theme.colorScheme.primary,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const MoodAnalyticsScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 18),
                       const _SectionTitle(
                         title: 'Recommended for you',
                         subtitle: 'Small actions to keep your day steady',
@@ -126,24 +136,31 @@ class _HomeScreenState extends State<HomeScreen> {
                               iconColor: const Color(0xFF6D8E71),
                               title: 'Breathing\nExercise',
                               subtitle: '3 min',
+                              onTap: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => const BreathingScreen(),
+                                  ),
+                                );
+                              },
                             ),
                           ),
                           const SizedBox(width: 12),
-                          Expanded(
+                          const Expanded(
                             child: _RecommendationTile(
-                              background: const Color(0xFFEAF2FB),
+                              background: Color(0xFFEAF2FB),
                               icon: Icons.menu_book_outlined,
-                              iconColor: const Color(0xFF5A87B3),
+                              iconColor: Color(0xFF5A87B3),
                               title: 'Journal',
                               subtitle: 'Write your\nthoughts',
                             ),
                           ),
                           const SizedBox(width: 12),
-                          Expanded(
+                          const Expanded(
                             child: _RecommendationTile(
-                              background: const Color(0xFFF0EBF8),
+                              background: Color(0xFFF0EBF8),
                               icon: Icons.local_florist_outlined,
-                              iconColor: const Color(0xFF8A74B8),
+                              iconColor: Color(0xFF8A74B8),
                               title: 'Grounding\n5-4-3-2-1',
                               subtitle: 'Anxiety relief',
                               onTap: () {
@@ -415,6 +432,7 @@ class _RecommendationTile extends StatelessWidget {
     required this.iconColor,
     required this.title,
     required this.subtitle,
+    this.onTap,
   });
 
   final Color background;
@@ -422,51 +440,139 @@ class _RecommendationTile extends StatelessWidget {
   final Color iconColor;
   final String title;
   final String subtitle;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Container(
-      height: 150,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: background,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.75)),
+        child: Container(
+          height: 150,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: background,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.75)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.7),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: iconColor, size: 22),
+              ),
+              const Spacer(),
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: theme.colorScheme.onSurface,
+                  height: 1.2,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.58),
+                  height: 1.2,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.7),
-              shape: BoxShape.circle,
+    );
+  }
+}
+
+class _MoodInsightsCard extends StatelessWidget {
+  const _MoodInsightsCard({required this.accent, required this.onTap});
+
+  final Color accent;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(22),
+        child: Ink(
+          width: double.infinity,
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                accent.withValues(alpha: 0.16),
+                Colors.white.withValues(alpha: 0.88),
+              ],
             ),
-            child: Icon(icon, color: iconColor, size: 22),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: accent.withValues(alpha: 0.10)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.035),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
+              ),
+            ],
           ),
-          const Spacer(),
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: theme.colorScheme.onSurface,
-              height: 1.2,
-            ),
+          child: Row(
+            children: [
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.9),
+                  borderRadius: BorderRadius.circular(17),
+                ),
+                child: Icon(Icons.insights_rounded, color: accent, size: 28),
+              ),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Mood Insights',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF193222),
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Track your 7, 30 and 90-day emotional trends.',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        height: 1.35,
+                        color: Color(0xFF6D7B72),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.arrow_forward_ios_rounded, color: accent, size: 17),
+            ],
           ),
-          const SizedBox(height: 6),
-          Text(
-            subtitle,
-            style: TextStyle(
-              fontSize: 12,
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.58),
-              height: 1.2,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -646,6 +752,7 @@ class _BottomNavBar extends StatelessWidget {
     final theme = Theme.of(context);
     final items = [
       (Icons.home_rounded, 'Home'),
+      (Icons.bedtime_rounded, 'Sleep'),
       (Icons.spa_outlined, 'Exercises'),
       (Icons.menu_book_outlined, 'Journal'),
       (Icons.person_outline_rounded, 'Profile'),
@@ -673,7 +780,21 @@ class _BottomNavBar extends StatelessWidget {
 
           return Expanded(
             child: InkWell(
-              onTap: () => onTap(index),
+              onTap: () {
+                onTap(index);
+                // Handle navigation for sleep tab
+                if (index == 1) {
+                  // Navigate to sleep tracking
+                  _handleSleepNavigation(context);
+                } else if (index == 2) {
+                  // Navigate to breathing exercise
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const BreathingScreen(),
+                    ),
+                  );
+                }
+              },
               borderRadius: BorderRadius.circular(16),
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 6),
@@ -696,6 +817,72 @@ class _BottomNavBar extends StatelessWidget {
             ),
           );
         }),
+      ),
+    );
+  }
+
+  void _handleSleepNavigation(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => Container(
+        color: Colors.white,
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  'Sleep Tracking',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.edit),
+                title: const Text('Log Sleep'),
+                subtitle: const Text('Record your sleep duration and quality'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const LogSleepScreen(),
+                    ),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.insights),
+                title: const Text('Sleep & Mood Insights'),
+                subtitle: const Text('View your sleep patterns and wellness'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const SleepInsightsScreen(),
+                    ),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.history),
+                title: const Text('Sleep History'),
+                subtitle: const Text('View all your past sleep logs'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const SleepHistoryScreen(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        ),
       ),
     );
   }

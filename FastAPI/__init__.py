@@ -1,0 +1,1 @@
+"""AuraMind FastAPI backend package."""

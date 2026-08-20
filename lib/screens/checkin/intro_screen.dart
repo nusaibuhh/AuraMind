@@ -106,10 +106,10 @@ class IntroScreen extends StatelessWidget {
                 accentColor: primary,
               ),
               const SizedBox(height: 12),
-              _InfoRowCard(
+              const _InfoRowCard(
                 icon: Icons.verified_user_outlined,
                 text: 'Your responses are private and safe',
-                accentColor: const Color(0xFF7CB27A),
+                accentColor: Color(0xFF7CB27A),
               ),
               const SizedBox(height: 32),
               SizedBox(
