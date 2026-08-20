@@ -18,6 +18,7 @@ import sqlite3
 import uuid
 from datetime import datetime
 import os
+from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 
 from fastapi import FastAPI, HTTPException, Header
@@ -26,6 +27,7 @@ from pydantic import BaseModel
 
 app = FastAPI(title="AuraMind API")
 DB_NAME = os.path.join(os.path.dirname(os.path.abspath(__file__)), "auramind.db")
+DB_NAME = str((__import__("pathlib").Path(__file__).resolve().parent / "auramind.db"))
 
 # Allow CORS for development (adjust in production)
 app.add_middleware(
@@ -40,6 +42,15 @@ app.add_middleware(
 # =====================================================================
 # DATABASE SETUP
 # =====================================================================
+def _ensure_column(cursor, table: str, column: str, column_type: str):
+    """Add a column to an existing SQLite table without destroying team data."""
+    cursor.execute(f"PRAGMA table_info({table})")
+    columns = {row[1] for row in cursor.fetchall()}
+    if column not in columns:
+        cursor.execute(
+            f"ALTER TABLE {table} ADD COLUMN {column} {column_type}"
+        )
+
 def connect_db():
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
@@ -52,13 +63,18 @@ def connect_db():
         token TEXT
     )""")
 
-    # Store raw checkins
+    # Store raw check-ins and the normalized wellbeing score used by the
+    # longitudinal mood analytics feature.  The migration below keeps older
+    # team databases compatible by adding the new columns when needed.
     c.execute("""CREATE TABLE IF NOT EXISTS MOOD_CHECKINS (
         id TEXT PRIMARY KEY,
         user_id TEXT,
         answers TEXT,
         created_at TEXT
     )""")
+
+    _ensure_column(c, "MOOD_CHECKINS", "mood_score", "REAL")
+    _ensure_column(c, "MOOD_CHECKINS", "dominant_category", "TEXT")
 
     # Theme palettes (detailed schema expected by frontend)
     c.execute("""CREATE TABLE IF NOT EXISTS THEME_PALETTES (
@@ -311,49 +327,62 @@ def login(req: LoginRequest):
 
 @app.post("/checkin")
 def checkin(req: CheckinRequest, authorization: Optional[str] = Header(None)):
+    """Score and persist a completed mood check-in.
+
+    The existing questionnaire contains 12 questions: 1-4 depression,
+    5-8 anxiety and 9-12 stress. Each answer is 0-4.  We also normalize
+    the complete response to a 0-10 wellbeing score where higher is better.
+    The normalized score is what the longitudinal analytics graph uses.
+    """
     user = require_user(authorization)
 
-    # Scoring: distribute question indices into three buckets
     depression = 0
     anxiety = 0
     stress = 0
-    for k, v in req.answers.items():
-        try:
-            idx = int(k)
-        except Exception:
-            # non-numeric keys -> put into stress by default
-            stress += int(v)
-            continue
-        if idx % 3 == 1:
-            depression += int(v)
-        elif idx % 3 == 2:
-            anxiety += int(v)
-        else:
-            stress += int(v)
 
-    # Determine dominant category
+    for key, value in req.answers.items():
+        idx = int(key)
+        value = max(0, min(4, int(value)))
+        if 1 <= idx <= 4:
+            depression += value
+        elif 5 <= idx <= 8:
+            anxiety += value
+        elif 9 <= idx <= 12:
+            stress += value
+
     scores = {"depression": depression, "anxiety": anxiety, "stress": stress}
     dominant = max(scores, key=scores.get)
     if scores[dominant] == 0:
         dominant = "normal"
 
-    # Persist raw answers — adapt to existing DB schema (4 or 5 columns)
+    # 0 = highest symptom burden, 48 = maximum burden for 12 questions.
+    # Convert that to an intuitive wellbeing score: 10 = best, 0 = worst.
+    answered_count = max(1, len(req.answers))
+    maximum_possible = answered_count * 4
+    raw_total = depression + anxiety + stress
+    mood_score = round(10.0 - (raw_total / maximum_possible) * 10.0, 2)
+    mood_score = max(0.0, min(10.0, mood_score))
+
     checkin_id = uuid.uuid4().hex
+    created_at = now()
+
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-    # inspect table columns
-    c.execute("PRAGMA table_info(MOOD_CHECKINS)")
-    cols = c.fetchall()
-    col_names = [r[1] for r in cols]
-    if 'mood_result' in col_names:
-        # older schema: id, user_id, answers, mood_result, created_at
-        c.execute("INSERT INTO MOOD_CHECKINS VALUES (?, ?, ?, ?, ?)", (checkin_id, user["id"], json.dumps(req.answers), dominant, now()))
-    else:
-        # newer schema: id, user_id, answers, created_at
-        c.execute("INSERT INTO MOOD_CHECKINS VALUES (?, ?, ?, ?)", (checkin_id, user["id"], json.dumps(req.answers), now()))
+    c.execute(
+        """INSERT INTO MOOD_CHECKINS
+        (id, user_id, answers, mood_score, dominant_category, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)""",
+        (
+            checkin_id,
+            user["id"],
+            json.dumps(req.answers),
+            mood_score,
+            dominant,
+            created_at,
+        ),
+    )
     conn.commit()
 
-    # Recommend palettes
     if dominant == "normal":
         c.execute("SELECT * FROM THEME_PALETTES ORDER BY RANDOM() LIMIT 3")
     else:
@@ -379,11 +408,74 @@ def checkin(req: CheckinRequest, authorization: Optional[str] = Header(None)):
     recommended = [palette_from_row(r) for r in rows]
 
     return {
+        "checkin_id": checkin_id,
+        "created_at": created_at,
         "depression_score": depression,
         "anxiety_score": anxiety,
         "stress_score": stress,
+        "mood_score": mood_score,
         "dominant_category": dominant,
         "recommended_palettes": recommended,
+    }
+
+
+# =====================================================================
+# MODULE 1 — LONGITUDINAL MOOD ANALYTICS & TREND TRACKING
+# =====================================================================
+try:
+    from mood_analytics import analyze_mood_history
+except ImportError:  # supports `uvicorn FastAPI.app:app` from repo root
+    from FastAPI.mood_analytics import analyze_mood_history
+
+
+@app.get("/mood/analytics")
+def get_mood_analytics(
+    days: int = 7,
+    authorization: Optional[str] = Header(None),
+):
+    """Return timestamped mood points, trend state and intervention tier.
+
+    Supported rolling windows are 7, 30 and 90 days. The authenticated
+    user's data is always isolated by user_id.
+    """
+    user = require_user(authorization)
+    if days not in (7, 30, 90):
+        raise HTTPException(
+            status_code=400,
+            detail="days must be one of 7, 30, or 90",
+        )
+
+    cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
+
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute(
+        """SELECT created_at, mood_score, dominant_category
+        FROM MOOD_CHECKINS
+        WHERE user_id = ?
+          AND created_at >= ?
+          AND mood_score IS NOT NULL
+        ORDER BY created_at ASC""",
+        (user["id"], cutoff),
+    )
+    rows = c.fetchall()
+    conn.close()
+
+    points = [
+        {
+            "timestamp": row[0],
+            "mood_score": float(row[1]),
+            "category": row[2] or "normal",
+        }
+        for row in rows
+    ]
+
+    analysis = analyze_mood_history(points)
+
+    return {
+        "period_days": days,
+        "points": points,
+        **analysis,
     }
 
 

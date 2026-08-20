@@ -9,6 +9,7 @@ import '../sleep/log_sleep_screen.dart';
 import '../sleep/sleep_insights_screen.dart';
 import '../sleep/sleep_history_screen.dart';
 import '../breathing/breathing_screen.dart';
+import 'mood_analytics_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -102,6 +103,17 @@ class _HomeScreenState extends State<HomeScreen> {
                           Navigator.of(context).push(
                             MaterialPageRoute(
                               builder: (_) => const IntroScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 18),
+                      _MoodInsightsCard(
+                        accent: theme.colorScheme.primary,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const MoodAnalyticsScreen(),
                             ),
                           );
                         },
@@ -468,6 +480,86 @@ class _RecommendationTile extends StatelessWidget {
                   height: 1.2,
                 ),
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MoodInsightsCard extends StatelessWidget {
+  const _MoodInsightsCard({required this.accent, required this.onTap});
+
+  final Color accent;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(22),
+        child: Ink(
+          width: double.infinity,
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                accent.withValues(alpha: 0.16),
+                Colors.white.withValues(alpha: 0.88),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: accent.withValues(alpha: 0.10)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.035),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.9),
+                  borderRadius: BorderRadius.circular(17),
+                ),
+                child: Icon(Icons.insights_rounded, color: accent, size: 28),
+              ),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Mood Insights',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF193222),
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Track your 7, 30 and 90-day emotional trends.',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        height: 1.35,
+                        color: Color(0xFF6D7B72),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.arrow_forward_ios_rounded, color: accent, size: 17),
             ],
           ),
         ),

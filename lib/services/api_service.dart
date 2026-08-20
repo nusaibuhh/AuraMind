@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import '../config/api_config.dart';
 import '../models/question.dart';
+import '../models/mood_analytics.dart';
 import '../models/theme_palette.dart';
 import '../utils/scoring.dart';
 
@@ -115,6 +116,19 @@ class ApiService {
         .toList();
 
     return (result: result, palettes: palettes);
+  }
+
+  Future<MoodAnalytics> getMoodAnalytics({int days = 7}) async {
+    if (![7, 30, 90].contains(days)) {
+      throw ApiException('Mood analytics period must be 7, 30, or 90 days.');
+    }
+
+    final response = await _client.get(
+      Uri.parse('${ApiConfig.baseUrl}/mood/analytics?days=$days'),
+      headers: _headers,
+    );
+    final data = await _handleResponse(response);
+    return MoodAnalytics.fromJson(data as Map<String, dynamic>);
   }
 
   Future<void> selectTheme(String paletteId) async {
