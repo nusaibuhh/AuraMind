@@ -9,6 +9,9 @@ import '../sleep/log_sleep_screen.dart';
 import '../sleep/sleep_insights_screen.dart';
 import '../sleep/sleep_history_screen.dart';
 import '../breathing/breathing_screen.dart';
+import '../grounding/grounding_screen.dart';
+import 'mood_analytics_screen.dart';
+
 import 'mood_analytics_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -160,6 +163,13 @@ class _HomeScreenState extends State<HomeScreen> {
                               iconColor: Color(0xFF8A74B8),
                               title: 'Grounding\n5-4-3-2-1',
                               subtitle: 'Anxiety relief',
+                              onTap: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => const GroundingScreen(),
+                                  ),
+                                );
+                              },
                             ),
                           ),
                         ],
