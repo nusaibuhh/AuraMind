@@ -11,48 +11,30 @@ import 'providers/questionnaire_provider.dart';
 import 'providers/theme_provider.dart';
 
 import 'providers/sleep_provider.dart';
-
+import 'providers/breathing_provider.dart';
 import 'screens/auth/login_screen.dart';
-
 import 'screens/checkin/intro_screen.dart';
-
 import 'screens/home/home_screen.dart';
-
 import 'services/api_service.dart';
 
-
-
 class AuraMindApp extends StatelessWidget {
-
   AuraMindApp({super.key});
 
   // IMPORTANT: this single ApiService instance is shared by every provider
   // that needs to make authenticated requests. AuthProvider.login()/signUp()
   // calls setToken() on this exact instance, so any other provider using it
-  // (e.g. SleepProvider) automatically gets the Authorization header too.
-  // Previously SleepProvider created its own separate `ApiService()`, which
-  // never received the token — every sleep API call went out unauthenticated
-  // and the backend rejected it with 401.
+  // (e.g. SleepProvider, BreathingProvider) automatically gets the Authorization header too.
   final ApiService _sharedApiService = ApiService();
 
-
-
   @override
-
   Widget build(BuildContext context) {
-
     return MultiProvider(
-
       providers: [
-
         ChangeNotifierProvider(create: (_) => AuthProvider(api: _sharedApiService)),
-
         ChangeNotifierProvider(create: (_) => AppThemeProvider()),
-
         ChangeNotifierProvider(create: (_) => QuestionnaireProvider()),
-
         ChangeNotifierProvider(create: (_) => SleepProvider(_sharedApiService)),
-
+        ChangeNotifierProvider(create: (_) => BreathingProvider(_sharedApiService)),
       ],
 
       child: Consumer<AppThemeProvider>(
