@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import '../config/api_config.dart';
 import '../models/question.dart';
+import '../models/community_comment.dart';
 import '../models/community_post.dart';
 import '../models/mood_analytics.dart';
 import '../models/theme_palette.dart';
@@ -227,7 +228,6 @@ class ApiService {
     );
   }
 
-
   // ===== Module 1: Anonymous Community Forum =====
 
   Future<List<CommunityPost>> getCommunityPosts({int limit = 50}) async {
@@ -262,6 +262,54 @@ class ApiService {
   }) async {
     final response = await _client.post(
       Uri.parse('${ApiConfig.baseUrl}/community/posts/$postId/report'),
+      headers: _headers,
+      body: jsonEncode({'reason': reason}),
+    );
+    await _handleResponse(response);
+  }
+
+  Future<List<CommunityComment>> getCommunityComments({
+    required String postId,
+    int limit = 100,
+  }) async {
+    final response = await _client.get(
+      Uri.parse(
+        '${ApiConfig.baseUrl}/community/posts/$postId/comments?limit=$limit',
+      ),
+      headers: _headers,
+    );
+    final result = await _handleResponse(response);
+    if (result is! List) return [];
+    return result
+        .map(
+          (item) => CommunityComment.fromJson(
+            Map<String, dynamic>.from(item as Map),
+          ),
+        )
+        .toList();
+  }
+
+  Future<CommunityComment> createCommunityComment({
+    required String postId,
+    required String content,
+  }) async {
+    final response = await _client.post(
+      Uri.parse('${ApiConfig.baseUrl}/community/posts/$postId/comments'),
+      headers: _headers,
+      body: jsonEncode({'content': content}),
+    );
+    final result = await _handleResponse(response);
+    return CommunityComment.fromJson(
+      Map<String, dynamic>.from(result as Map),
+    );
+  }
+
+  Future<void> reportCommunityComment({
+    required String commentId,
+    required String reason,
+  }) async {
+    final response = await _client.post(
+      Uri.parse('${ApiConfig.baseUrl}/community/comments/$commentId/report'),
       headers: _headers,
       body: jsonEncode({'reason': reason}),
     );
@@ -306,7 +354,8 @@ class ApiService {
     return result is List ? result : [];
   }
 
-  Future<Map<String, dynamic>> saveSleepLog(Map<String, dynamic> payload) async {
+  Future<Map<String, dynamic>> saveSleepLog(
+      Map<String, dynamic> payload) async {
     final response = await _client.post(
       Uri.parse('${ApiConfig.baseUrl}/sleep/log'),
       headers: _headers,
