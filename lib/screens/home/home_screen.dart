@@ -10,8 +10,7 @@ import '../sleep/sleep_insights_screen.dart';
 import '../sleep/sleep_history_screen.dart';
 import '../breathing/breathing_screen.dart';
 import '../grounding/grounding_screen.dart';
-import 'mood_analytics_screen.dart';
-
+import '../community/community_forum_screen.dart';
 import 'mood_analytics_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -75,7 +74,8 @@ class _HomeScreenState extends State<HomeScreen> {
                             context: context,
                             builder: (_) => AlertDialog(
                               title: Text(auth.user?.name ?? 'Profile'),
-                              content: const Text('View your profile information.'),
+                              content:
+                                  const Text('View your profile information.'),
                               actions: [
                                 TextButton(
                                   onPressed: () => Navigator.of(context).pop(),
@@ -85,7 +85,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                   onPressed: () {
                                     Navigator.of(context).pop();
                                     auth.logout();
-                                    context.read<AppThemeProvider>().resetCheckIn();
+                                    context
+                                        .read<AppThemeProvider>()
+                                        .resetCheckIn();
                                     Navigator.of(context).pushAndRemoveUntil(
                                       MaterialPageRoute(
                                           builder: (_) => const LoginScreen()),
@@ -117,6 +119,17 @@ class _HomeScreenState extends State<HomeScreen> {
                           Navigator.of(context).push(
                             MaterialPageRoute(
                               builder: (_) => const MoodAnalyticsScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 18),
+                      _CommunityForumCard(
+                        accent: theme.colorScheme.primary,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const CommunityForumScreen(),
                             ),
                           );
                         },
@@ -156,9 +169,9 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ),
                           const SizedBox(width: 12),
-                          const Expanded(
+                          Expanded(
                             child: _RecommendationTile(
-                              background: Color(0xFFF0EBF8),
+                              background: const Color(0xFFF0EBF8),
                               icon: Icons.local_florist_outlined,
                               iconColor: Color(0xFF8A74B8),
                               title: 'Grounding\n5-4-3-2-1',
@@ -363,7 +376,8 @@ class _QuickCheckInCard extends StatelessWidget {
                       'How are you feeling right now?',
                       style: TextStyle(
                         fontSize: 14,
-                        color: theme.colorScheme.onSurface.withValues(alpha: 0.56),
+                        color:
+                            theme.colorScheme.onSurface.withValues(alpha: 0.56),
                       ),
                     ),
                   ],
@@ -807,7 +821,8 @@ class _BottomNavBar extends StatelessWidget {
                       item.$2,
                       style: TextStyle(
                         fontSize: 11,
-                        fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                        fontWeight:
+                            selected ? FontWeight.w700 : FontWeight.w500,
                         color: color,
                       ),
                     ),
@@ -913,6 +928,78 @@ class _CircleIconButton extends StatelessWidget {
           width: 42,
           height: 42,
           child: Icon(icon, color: iconColor, size: 22),
+        ),
+      ),
+    );
+  }
+}
+
+class _CommunityForumCard extends StatelessWidget {
+  const _CommunityForumCard({
+    required this.accent,
+    required this.onTap,
+  });
+
+  final Color accent;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(22),
+        child: Ink(
+          width: double.infinity,
+          padding: const EdgeInsets.all(17),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF2EAFB),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: const Color(0xFFE2D4F2)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.9),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Icon(Icons.forum_outlined, color: accent, size: 27),
+              ),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Anonymous Community',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Share and connect without exposing your identity.',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        height: 1.35,
+                        color: Color(0xFF746A7A),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 17,
+                color: Color(0xFF8C6AAF),
+              ),
+            ],
+          ),
         ),
       ),
     );
