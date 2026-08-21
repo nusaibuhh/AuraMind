@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import '../config/api_config.dart';
 import '../models/question.dart';
+import '../models/community_post.dart';
 import '../models/mood_analytics.dart';
 import '../models/theme_palette.dart';
 import '../utils/scoring.dart';
@@ -224,6 +225,47 @@ class ApiService {
           .map((c) => _hexColor(c as String))
           .toList(),
     );
+  }
+
+
+  // ===== Module 1: Anonymous Community Forum =====
+
+  Future<List<CommunityPost>> getCommunityPosts({int limit = 50}) async {
+    final response = await _client.get(
+      Uri.parse('${ApiConfig.baseUrl}/community/posts?limit=$limit'),
+      headers: _headers,
+    );
+    final result = await _handleResponse(response);
+    if (result is! List) return [];
+    return result
+        .map((item) => CommunityPost.fromJson(
+              Map<String, dynamic>.from(item as Map),
+            ))
+        .toList();
+  }
+
+  Future<CommunityPost> createCommunityPost(String content) async {
+    final response = await _client.post(
+      Uri.parse('${ApiConfig.baseUrl}/community/posts'),
+      headers: _headers,
+      body: jsonEncode({'content': content}),
+    );
+    final result = await _handleResponse(response);
+    return CommunityPost.fromJson(
+      Map<String, dynamic>.from(result as Map),
+    );
+  }
+
+  Future<void> reportCommunityPost({
+    required String postId,
+    required String reason,
+  }) async {
+    final response = await _client.post(
+      Uri.parse('${ApiConfig.baseUrl}/community/posts/$postId/report'),
+      headers: _headers,
+      body: jsonEncode({'reason': reason}),
+    );
+    await _handleResponse(response);
   }
 
   // ===== Sleep Tracking Endpoints =====

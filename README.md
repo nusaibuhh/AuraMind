@@ -114,3 +114,26 @@ Intervention Tier
       ↓
 Flutter Mood Analytics Screen
 
+## Module 1 — Zero-Knowledge Anonymous Community Forum
+
+AuraMind includes a privacy-first peer-support forum where authenticated users
+can participate without exposing their real identity in the public feed.
+
+### Features
+- Pseudonymous public identities generated from private user IDs
+- Public responses never expose name, email, phone number or user ID
+- Email and phone patterns are scrubbed before public display
+- Anonymous post creation and chronological community feed
+- User-driven reporting with duplicate-report prevention
+- Flutter screen integrated with the AuraMind home screen
+- FastAPI + SQLite persistence using the existing authenticated API
+
+### Backend endpoints
+```text
+GET  /community/posts
+POST /community/posts
+POST /community/posts/{post_id}/report
+```
+
+Scope note: Module 1 records reports only. Automatic quarantine/hiding and the
+later AI moderation engine remain outside this module.

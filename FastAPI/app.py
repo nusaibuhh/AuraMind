@@ -14,6 +14,8 @@ emulator) by default.
 """
 
 import json
+import hashlib
+import re
 import sqlite3
 import uuid
 from datetime import datetime
@@ -145,6 +147,24 @@ def connect_db():
         background_sound TEXT,
         mood_after TEXT,
         created_at TEXT
+    )""")
+
+
+    # Module 1: Zero-Knowledge Anonymous Community Forum
+    c.execute("""CREATE TABLE IF NOT EXISTS COMMUNITY_POSTS (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        body TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        is_hidden INTEGER DEFAULT 0
+    )""")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS COMMUNITY_REPORTS (
+        id TEXT PRIMARY KEY,
+        post_id TEXT NOT NULL,
+        reporter_user_id TEXT NOT NULL,
+        reason TEXT,
+        created_at TEXT NOT NULL
     )""")
 
     conn.commit()
@@ -1183,3 +1203,171 @@ def delete_breathing_session(
     conn.close()
 
     return {"success": True}
+
+# =====================================================================
+# MODULE 1 — ZERO-KNOWLEDGE ANONYMOUS COMMUNITY FORUM
+# =====================================================================
+
+class CommunityPostRequest(BaseModel):
+    content: str
+
+
+class CommunityReportRequest(BaseModel):
+    reason: Optional[str] = "Harmful or triggering content"
+
+
+_COMMUNITY_ADJECTIVES = (
+    "Quiet", "Gentle", "Calm", "Kind", "Brave", "Hopeful",
+    "Silver", "Soft", "Warm", "Steady", "Open", "Bright",
+)
+_COMMUNITY_NOUNS = (
+    "Cedar", "River", "Cloud", "Meadow", "Moon", "Willow",
+    "Harbor", "Dawn", "Fern", "Rain", "Sky", "Lotus",
+)
+
+
+def _community_alias(user_id: str) -> str:
+    """Generate a deterministic pseudonym without exposing user PII."""
+    digest = hashlib.sha256(user_id.encode("utf-8")).digest()
+    adjective = _COMMUNITY_ADJECTIVES[digest[0] % len(_COMMUNITY_ADJECTIVES)]
+    noun = _COMMUNITY_NOUNS[digest[1] % len(_COMMUNITY_NOUNS)]
+    suffix = int.from_bytes(digest[2:4], "big") % 90 + 10
+    return f"Anonymous {adjective} {noun} {suffix}"
+
+
+def _scrub_community_pii(text: str) -> str:
+    """Remove common contact PII before public storage/rendering."""
+    value = " ".join(text.strip().split())
+    value = re.sub(
+        r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",
+        "[email removed]",
+        value,
+    )
+    value = re.sub(
+        r"(?<!\w)(?:\+?880[\s-]?)?01[3-9](?:[\s-]?\d){8}(?!\w)",
+        "[phone removed]",
+        value,
+    )
+    value = re.sub(
+        r"(?<!\w)\+?\d[\d\s().-]{8,}\d(?!\w)",
+        "[phone removed]",
+        value,
+    )
+    return value[:1000].strip()
+
+
+def _public_community_post(row, report_count: int = 0):
+    return {
+        "id": row[0],
+        "author_alias": _community_alias(row[1]),
+        "content": row[2],
+        "created_at": row[3],
+        "report_count": report_count,
+    }
+
+
+@app.get("/community/posts")
+def get_community_posts(
+    limit: int = 50,
+    authorization: Optional[str] = Header(None),
+):
+    require_user(authorization)
+    limit = max(1, min(100, limit))
+
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute(
+        """SELECT p.id, p.user_id, p.body, p.created_at,
+                  COUNT(r.id) AS report_count
+           FROM COMMUNITY_POSTS p
+           LEFT JOIN COMMUNITY_REPORTS r ON r.post_id = p.id
+           WHERE p.is_hidden = 0
+           GROUP BY p.id, p.user_id, p.body, p.created_at
+           ORDER BY p.created_at DESC
+           LIMIT ?""",
+        (limit,),
+    )
+    rows = c.fetchall()
+    conn.close()
+    return [_public_community_post(row[:4], int(row[4] or 0)) for row in rows]
+
+
+@app.post("/community/posts")
+def create_community_post(
+    req: CommunityPostRequest,
+    authorization: Optional[str] = Header(None),
+):
+    user = require_user(authorization)
+    cleaned = _scrub_community_pii(req.content)
+    if len(cleaned) < 2:
+        raise HTTPException(status_code=400, detail="Post is too short")
+
+    post_id = uuid.uuid4().hex
+    created_at = now()
+
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute(
+        """INSERT INTO COMMUNITY_POSTS
+           (id, user_id, body, created_at, is_hidden)
+           VALUES (?, ?, ?, ?, 0)""",
+        (post_id, user["id"], cleaned, created_at),
+    )
+    conn.commit()
+    conn.close()
+
+    return {
+        "id": post_id,
+        "author_alias": _community_alias(user["id"]),
+        "content": cleaned,
+        "created_at": created_at,
+        "report_count": 0,
+    }
+
+
+@app.post("/community/posts/{post_id}/report")
+def report_community_post(
+    post_id: str,
+    req: CommunityReportRequest,
+    authorization: Optional[str] = Header(None),
+):
+    """Module 1 records reports only; later modules handle AI/quarantine."""
+    user = require_user(authorization)
+    reason = _scrub_community_pii(req.reason or "")[:200] or "Community report"
+
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute(
+        "SELECT id FROM COMMUNITY_POSTS WHERE id=? AND is_hidden=0",
+        (post_id,),
+    )
+    if c.fetchone() is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Community post not found")
+
+    c.execute(
+        """SELECT id FROM COMMUNITY_REPORTS
+           WHERE post_id=? AND reporter_user_id=?""",
+        (post_id, user["id"]),
+    )
+    if c.fetchone() is not None:
+        conn.close()
+        return {
+            "success": True,
+            "already_reported": True,
+            "message": "You already reported this post.",
+        }
+
+    c.execute(
+        """INSERT INTO COMMUNITY_REPORTS
+           (id, post_id, reporter_user_id, reason, created_at)
+           VALUES (?, ?, ?, ?, ?)""",
+        (uuid.uuid4().hex, post_id, user["id"], reason, now()),
+    )
+    conn.commit()
+    conn.close()
+    return {
+        "success": True,
+        "already_reported": False,
+        "message": "Report received for review.",
+    }
