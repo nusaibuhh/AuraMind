@@ -151,4 +151,10 @@ gentle tense-and-release cycles from the face down to the feet.
 - Step-by-step written guidance alongside voice instructions
 - Safety reminder to stop if pain or unusual discomfort occurs
 - Direct access from the AuraMind home screen
+### Module 1 Community Interaction Enhancement
+- Anonymous comments on community posts
+- Comment counts on each post
+- Pseudonymous commenter identities
+- Email and phone-number scrubbing in comments
+- Comment reporting for moderation review
 
