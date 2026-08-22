@@ -138,6 +138,19 @@ POST /community/posts/{post_id}/report
 Scope note: Module 1 records reports only. Automatic quarantine/hiding and the
 later AI moderation engine remain outside this module.
 
+## Module 2 — Audio-Guided Progressive Muscle Relaxation
+
+AuraMind includes a guided stress-relief exercise that walks the user through
+gentle tense-and-release cycles from the face down to the feet.
+
+### Features
+- Audio guidance using device text-to-speech
+- Head-to-toe muscle group sequence
+- Play/pause, previous and next controls
+- Session progress and elapsed time
+- Step-by-step written guidance alongside voice instructions
+- Safety reminder to stop if pain or unusual discomfort occurs
+- Direct access from the AuraMind home screen
 ### Module 1 Community Interaction Enhancement
 - Anonymous comments on community posts
 - Comment counts on each post

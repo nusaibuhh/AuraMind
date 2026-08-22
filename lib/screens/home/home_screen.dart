@@ -11,6 +11,7 @@ import '../sleep/sleep_history_screen.dart';
 import '../breathing/breathing_screen.dart';
 import '../grounding/grounding_screen.dart';
 import '../community/community_forum_screen.dart';
+import '../relaxation/muscle_relaxation_screen.dart';
 import 'mood_analytics_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -130,6 +131,16 @@ class _HomeScreenState extends State<HomeScreen> {
                           Navigator.of(context).push(
                             MaterialPageRoute(
                               builder: (_) => const CommunityForumScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 18),
+                      _MuscleRelaxationCard(
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const MuscleRelaxationScreen(),
                             ),
                           );
                         },
@@ -928,6 +939,92 @@ class _CircleIconButton extends StatelessWidget {
           width: 42,
           height: 42,
           child: Icon(icon, color: iconColor, size: 22),
+        ),
+      ),
+    );
+  }
+}
+
+class _MuscleRelaxationCard extends StatelessWidget {
+  const _MuscleRelaxationCard({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(22),
+        child: Ink(
+          width: double.infinity,
+          padding: const EdgeInsets.all(17),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Color(0xFF4A3150),
+                Color(0xFF694A70),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(22),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF4A3150).withValues(alpha: 0.18),
+                blurRadius: 18,
+                offset: const Offset(0, 7),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(17),
+                ),
+                child: const Icon(
+                  Icons.self_improvement_rounded,
+                  color: Color(0xFFF1D6F4),
+                  size: 30,
+                ),
+              ),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Muscle Relaxation',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Audio-guided head-to-toe tense and release exercise.',
+                      style: TextStyle(
+                        color: Color(0xFFE1D4E3),
+                        fontSize: 12.5,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.play_circle_fill_rounded,
+                color: Color(0xFFF1D6F4),
+                size: 30,
+              ),
+            ],
+          ),
         ),
       ),
     );
