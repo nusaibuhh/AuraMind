@@ -158,3 +158,52 @@ gentle tense-and-release cycles from the face down to the feet.
 - Email and phone-number scrubbing in comments
 - Comment reporting for moderation review
 
+## Mood Momentum Walk
+
+The **Mood Momentum Walk** is a 5–10 minute interactive physical movement feature designed to help users break periods of low activity and depressive lethargy through short, guided walking sessions.
+
+### Features
+
+- 5-minute and 10-minute walking sessions
+- Countdown timer for the selected session duration
+- Real-time step tracking using the device's native activity/step-counting capabilities
+- Dynamic progress ring based on the user's walking progress
+- Pause and resume functionality
+- Step goal tracking
+- Grounding voice guidance using text-to-speech
+- Session completion feedback
+- Integration with the main AuraMind home screen
+
+### Workflow
+
+```text
+User opens AuraMind Home
+        ↓
+Selects "Mood Momentum Walk"
+        ↓
+Chooses session duration
+   ┌───────────────┐
+   │  5 minutes    │
+   │      OR       │
+   │  10 minutes   │
+   └───────────────┘
+        ↓
+Grants activity recognition permission
+        ↓
+Walking session starts
+        ↓
+Native step counter tracks movement
+        ↓
+Steps are calculated relative to the
+session starting baseline
+        ↓
+Progress ring updates in real time
+        ↓
+Grounding voice guidance provides
+sensory grounding instructions
+        ↓
+User can Pause / Resume the session
+        ↓
+Timer reaches zero
+        ↓
+Session completion feedback
