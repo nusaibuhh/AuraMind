@@ -137,3 +137,11 @@ POST /community/posts/{post_id}/report
 
 Scope note: Module 1 records reports only. Automatic quarantine/hiding and the
 later AI moderation engine remain outside this module.
+
+### Module 1 Community Interaction Enhancement
+- Anonymous comments on community posts
+- Comment counts on each post
+- Pseudonymous commenter identities
+- Email and phone-number scrubbing in comments
+- Comment reporting for moderation review
+

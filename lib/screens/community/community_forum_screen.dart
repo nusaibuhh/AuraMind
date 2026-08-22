@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/community_post.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
+import 'community_comments_sheet.dart';
 
 class CommunityForumScreen extends StatefulWidget {
   const CommunityForumScreen({super.key});
@@ -218,6 +219,22 @@ class _CommunityForumScreenState extends State<CommunityForumScreen> {
     }
   }
 
+  Future<void> _openComments(CommunityPost post) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => CommunityCommentsSheet(
+        api: _api,
+        post: post,
+      ),
+    );
+
+    if (mounted) {
+      await _loadPosts();
+    }
+  }
+
   String _time(DateTime dt) {
     final d = DateTime.now().difference(dt.toLocal());
     if (d.inMinutes < 1) return 'Just now';
@@ -356,6 +373,7 @@ class _CommunityForumScreenState extends State<CommunityForumScreen> {
                     post: post,
                     timeLabel: _time(post.createdAt),
                     onReport: () => _report(post),
+                    onComments: () => _openComments(post),
                   ),
                 ),
               ),
@@ -371,11 +389,13 @@ class _PostCard extends StatelessWidget {
     required this.post,
     required this.timeLabel,
     required this.onReport,
+    required this.onComments,
   });
 
   final CommunityPost post;
   final String timeLabel;
   final VoidCallback onReport;
+  final VoidCallback onComments;
 
   @override
   Widget build(BuildContext context) {
@@ -432,8 +452,20 @@ class _PostCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          Text(post.content,
-              style: const TextStyle(fontSize: 15, height: 1.45)),
+          Text(
+            post.content,
+            style: const TextStyle(fontSize: 15, height: 1.45),
+          ),
+          const SizedBox(height: 11),
+          TextButton.icon(
+            onPressed: onComments,
+            icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
+            label: Text(
+              post.commentCount == 1
+                  ? '1 comment'
+                  : '${post.commentCount} comments',
+            ),
+          ),
         ],
       ),
     );

@@ -167,6 +167,23 @@ def connect_db():
         created_at TEXT NOT NULL
     )""")
 
+    c.execute("""CREATE TABLE IF NOT EXISTS COMMUNITY_COMMENTS (
+        id TEXT PRIMARY KEY,
+        post_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        body TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        is_hidden INTEGER DEFAULT 0
+    )""")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS COMMUNITY_COMMENT_REPORTS (
+        id TEXT PRIMARY KEY,
+        comment_id TEXT NOT NULL,
+        reporter_user_id TEXT NOT NULL,
+        reason TEXT,
+        created_at TEXT NOT NULL
+    )""")
+
     conn.commit()
     seed_palettes(conn)
     conn.close()
@@ -1215,6 +1232,13 @@ class CommunityPostRequest(BaseModel):
 class CommunityReportRequest(BaseModel):
     reason: Optional[str] = "Harmful or triggering content"
 
+class CommunityCommentRequest(BaseModel):
+    content: str
+
+
+class CommunityCommentReportRequest(BaseModel):
+    reason: Optional[str] = "Harmful or inappropriate comment"
+
 
 _COMMUNITY_ADJECTIVES = (
     "Quiet", "Gentle", "Calm", "Kind", "Brave", "Hopeful",
@@ -1256,12 +1280,28 @@ def _scrub_community_pii(text: str) -> str:
     return value[:1000].strip()
 
 
-def _public_community_post(row, report_count: int = 0):
+def _public_community_post(
+    row,
+    report_count: int = 0,
+    comment_count: int = 0,
+):
     return {
         "id": row[0],
         "author_alias": _community_alias(row[1]),
         "content": row[2],
         "created_at": row[3],
+        "report_count": report_count,
+        "comment_count": comment_count,
+    }
+
+
+def _public_community_comment(row, report_count: int = 0):
+    return {
+        "id": row[0],
+        "post_id": row[1],
+        "author_alias": _community_alias(row[2]),
+        "content": row[3],
+        "created_at": row[4],
         "report_count": report_count,
     }
 
@@ -1278,18 +1318,26 @@ def get_community_posts(
     c = conn.cursor()
     c.execute(
         """SELECT p.id, p.user_id, p.body, p.created_at,
-                  COUNT(r.id) AS report_count
+                  (SELECT COUNT(*) FROM COMMUNITY_REPORTS r
+                   WHERE r.post_id = p.id) AS report_count,
+                  (SELECT COUNT(*) FROM COMMUNITY_COMMENTS cc
+                   WHERE cc.post_id = p.id AND cc.is_hidden = 0) AS comment_count
            FROM COMMUNITY_POSTS p
-           LEFT JOIN COMMUNITY_REPORTS r ON r.post_id = p.id
            WHERE p.is_hidden = 0
-           GROUP BY p.id, p.user_id, p.body, p.created_at
            ORDER BY p.created_at DESC
            LIMIT ?""",
         (limit,),
     )
     rows = c.fetchall()
     conn.close()
-    return [_public_community_post(row[:4], int(row[4] or 0)) for row in rows]
+    return [
+        _public_community_post(
+            row[:4],
+            int(row[4] or 0),
+            int(row[5] or 0),
+        )
+        for row in rows
+    ]
 
 
 @app.post("/community/posts")
@@ -1322,6 +1370,7 @@ def create_community_post(
         "content": cleaned,
         "created_at": created_at,
         "report_count": 0,
+        "comment_count": 0,
     }
 
 
@@ -1370,4 +1419,129 @@ def report_community_post(
         "success": True,
         "already_reported": False,
         "message": "Report received for review.",
+    }
+
+@app.get("/community/posts/{post_id}/comments")
+def get_community_comments(
+    post_id: str,
+    limit: int = 100,
+    authorization: Optional[str] = Header(None),
+):
+    require_user(authorization)
+    limit = max(1, min(200, limit))
+
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute(
+        "SELECT id FROM COMMUNITY_POSTS WHERE id=? AND is_hidden=0",
+        (post_id,),
+    )
+    if c.fetchone() is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Community post not found")
+
+    c.execute(
+        """SELECT cc.id, cc.post_id, cc.user_id, cc.body, cc.created_at,
+                  (SELECT COUNT(*) FROM COMMUNITY_COMMENT_REPORTS cr
+                   WHERE cr.comment_id = cc.id) AS report_count
+           FROM COMMUNITY_COMMENTS cc
+           WHERE cc.post_id=? AND cc.is_hidden=0
+           ORDER BY cc.created_at ASC
+           LIMIT ?""",
+        (post_id, limit),
+    )
+    rows = c.fetchall()
+    conn.close()
+    return [
+        _public_community_comment(row[:5], int(row[5] or 0))
+        for row in rows
+    ]
+
+
+@app.post("/community/posts/{post_id}/comments")
+def create_community_comment(
+    post_id: str,
+    req: CommunityCommentRequest,
+    authorization: Optional[str] = Header(None),
+):
+    user = require_user(authorization)
+    cleaned = _scrub_community_pii(req.content)
+    if len(cleaned) < 1:
+        raise HTTPException(status_code=400, detail="Comment is too short")
+
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute(
+        "SELECT id FROM COMMUNITY_POSTS WHERE id=? AND is_hidden=0",
+        (post_id,),
+    )
+    if c.fetchone() is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Community post not found")
+
+    comment_id = uuid.uuid4().hex
+    created_at = now()
+    c.execute(
+        """INSERT INTO COMMUNITY_COMMENTS
+           (id, post_id, user_id, body, created_at, is_hidden)
+           VALUES (?, ?, ?, ?, ?, 0)""",
+        (comment_id, post_id, user["id"], cleaned, created_at),
+    )
+    conn.commit()
+    conn.close()
+
+    return {
+        "id": comment_id,
+        "post_id": post_id,
+        "author_alias": _community_alias(user["id"]),
+        "content": cleaned,
+        "created_at": created_at,
+        "report_count": 0,
+    }
+
+
+@app.post("/community/comments/{comment_id}/report")
+def report_community_comment(
+    comment_id: str,
+    req: CommunityCommentReportRequest,
+    authorization: Optional[str] = Header(None),
+):
+    user = require_user(authorization)
+    reason = _scrub_community_pii(req.reason or "")[:200] or "Community comment report"
+
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute(
+        "SELECT id FROM COMMUNITY_COMMENTS WHERE id=? AND is_hidden=0",
+        (comment_id,),
+    )
+    if c.fetchone() is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Community comment not found")
+
+    c.execute(
+        """SELECT id FROM COMMUNITY_COMMENT_REPORTS
+           WHERE comment_id=? AND reporter_user_id=?""",
+        (comment_id, user["id"]),
+    )
+    if c.fetchone() is not None:
+        conn.close()
+        return {
+            "success": True,
+            "already_reported": True,
+            "message": "You already reported this comment.",
+        }
+
+    c.execute(
+        """INSERT INTO COMMUNITY_COMMENT_REPORTS
+           (id, comment_id, reporter_user_id, reason, created_at)
+           VALUES (?, ?, ?, ?, ?)""",
+        (uuid.uuid4().hex, comment_id, user["id"], reason, now()),
+    )
+    conn.commit()
+    conn.close()
+    return {
+        "success": True,
+        "already_reported": False,
+        "message": "Comment report received for review.",
     }

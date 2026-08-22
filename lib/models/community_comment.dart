@@ -1,19 +1,19 @@
-class CommunityPost {
-  const CommunityPost({
+class CommunityComment {
+  const CommunityComment({
     required this.id,
+    required this.postId,
     required this.authorAlias,
     required this.content,
     required this.createdAt,
     required this.reportCount,
-    required this.commentCount,
   });
 
   final String id;
+  final String postId;
   final String authorAlias;
   final String content;
   final DateTime createdAt;
   final int reportCount;
-  final int commentCount;
 
   static DateTime _parseCreatedAt(dynamic value) {
     final raw = value?.toString().trim() ?? '';
@@ -30,14 +30,14 @@ class CommunityPost {
     return parsed?.toLocal() ?? DateTime.now();
   }
 
-  factory CommunityPost.fromJson(Map<String, dynamic> json) {
-    return CommunityPost(
+  factory CommunityComment.fromJson(Map<String, dynamic> json) {
+    return CommunityComment(
       id: json['id'] as String,
+      postId: json['post_id'] as String,
       authorAlias: json['author_alias'] as String? ?? 'Anonymous',
       content: json['content'] as String? ?? '',
       createdAt: _parseCreatedAt(json['created_at']),
       reportCount: json['report_count'] as int? ?? 0,
-      commentCount: json['comment_count'] as int? ?? 0,
     );
   }
 }
