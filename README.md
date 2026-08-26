@@ -45,6 +45,26 @@ flutter pub get
 flutter run
 ```
 
+### Run the backend with MySQL
+
+AuraMind uses a local MySQL database named `auramind`. After installing MySQL
+and creating the `auramind` user, configure the backend credentials:
+
+```bash
+cp FastAPI/.env.example FastAPI/.env
+```
+
+Open `FastAPI/.env` and replace `MYSQL_PASSWORD` with the password you chose
+for the `auramind` MySQL user. The credentials file is ignored by Git.
+
+Install backend dependencies and start the API:
+
+```bash
+pip install -r FastAPI/requirements.txt
+cd FastAPI
+uvicorn app:app --reload --port 8000
+```
+
 ## Project Structure
 
 ```
@@ -95,14 +115,14 @@ GET /mood/analytics?days=7
 GET /mood/analytics?days=30
 GET /mood/analytics?days=90
 
-The backend stores mood analytics data in SQLite and uses a Python analysis
+The backend stores mood analytics data in MySQL and uses a Python analysis
 pipeline to detect sustained downward mood trends.
 
 ### Mood Analytics Flow
 
 Mood Check-in
       ↓
-SQLite Storage
+MySQL Storage
       ↓
 FastAPI /mood/analytics
       ↓
@@ -126,6 +146,7 @@ can participate without exposing their real identity in the public feed.
 - Anonymous post creation and chronological community feed
 - User-driven reporting with duplicate-report prevention
 - Flutter screen integrated with the AuraMind home screen
+- FastAPI + MySQL persistence using the existing authenticated API
 - FastAPI + SQLite persistence using the existing authenticated API
 
 ### Backend endpoints
@@ -206,4 +227,4 @@ User can Pause / Resume the session
         ↓
 Timer reaches zero
         ↓
-Session completion feedback
+

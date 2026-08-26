@@ -29,3 +29,7 @@ pubspec.lock
 # OS
 .DS_Store
 Thumbs.db
+
+# Local database credentials
+.env
+FastAPI/.env
