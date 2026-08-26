@@ -14,12 +14,12 @@ emulator) by default.
 """
 
 import json
-<<<<<<< Updated upstream
+import hashlib
+import re
 import sqlite3
 =======
 import hashlib
 import re
->>>>>>> Stashed changes
 import uuid
 from datetime import datetime
 import os
@@ -205,12 +205,6 @@ def connect_db():
         created_at TEXT
     )""")
 
-<<<<<<< Updated upstream
-=======
-
-    # Module 1: Zero-Knowledge Anonymous Community Forum
-    c.execute("""CREATE TABLE IF NOT EXISTS COMMUNITY_POSTS (
-        id VARCHAR(64) PRIMARY KEY,
         user_id TEXT NOT NULL,
         body TEXT NOT NULL,
         created_at TEXT NOT NULL,
@@ -242,7 +236,7 @@ def connect_db():
         created_at TEXT NOT NULL
     )""")
 
->>>>>>> Stashed changes
+
     conn.commit()
     seed_palettes(conn)
     conn.close()
@@ -1284,9 +1278,7 @@ def delete_breathing_session(
     conn.commit()
     conn.close()
 
-<<<<<<< Updated upstream
     return {"success": True}
-=======
     return {"success": True}
 
 # =====================================================================
@@ -1613,4 +1605,5 @@ def report_community_comment(
         "already_reported": False,
         "message": "Comment report received for review.",
     }
->>>>>>> Stashed changes
+
+
