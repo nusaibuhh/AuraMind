@@ -14,20 +14,36 @@ emulator) by default.
 """
 
 import json
+<<<<<<< Updated upstream
 import sqlite3
+=======
+import hashlib
+import re
+>>>>>>> Stashed changes
 import uuid
 from datetime import datetime
 import os
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import List, Dict, Optional
 
 from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import pymysql
+from dotenv import load_dotenv
 
 app = FastAPI(title="AuraMind API")
-DB_NAME = os.path.join(os.path.dirname(os.path.abspath(__file__)), "auramind.db")
-DB_NAME = str((__import__("pathlib").Path(__file__).resolve().parent / "auramind.db"))
+load_dotenv(Path(__file__).resolve().parent / ".env")
+
+MYSQL_CONFIG = {
+    "host": os.getenv("MYSQL_HOST", "localhost"),
+    "port": int(os.getenv("MYSQL_PORT", "3306")),
+    "user": os.getenv("MYSQL_USER", "auramind"),
+    "password": os.getenv("MYSQL_PASSWORD", ""),
+    "database": os.getenv("MYSQL_DATABASE", "auramind"),
+    "charset": "utf8mb4",
+}
 
 # Allow CORS for development (adjust in production)
 app.add_middleware(
@@ -42,23 +58,65 @@ app.add_middleware(
 # =====================================================================
 # DATABASE SETUP
 # =====================================================================
+class DatabaseCursor:
+    """Keep the existing SQLite-style queries compatible with MySQL."""
+
+    def __init__(self, cursor):
+        self._cursor = cursor
+
+    def execute(self, query, params=None):
+        query = query.replace("?", "%s")
+        if params is None:
+            return self._cursor.execute(query)
+        return self._cursor.execute(query, params)
+
+    def fetchone(self):
+        return self._cursor.fetchone()
+
+    def fetchall(self):
+        return self._cursor.fetchall()
+
+
+class DatabaseConnection:
+    def __init__(self, connection):
+        self._connection = connection
+
+    def cursor(self):
+        return DatabaseCursor(self._connection.cursor())
+
+    def commit(self):
+        return self._connection.commit()
+
+    def close(self):
+        return self._connection.close()
+
+
+def connect_db_connection():
+    """Open a MySQL connection for a single request."""
+    return DatabaseConnection(pymysql.connect(**MYSQL_CONFIG))
+
+
 def _ensure_column(cursor, table: str, column: str, column_type: str):
-    """Add a column to an existing SQLite table without destroying team data."""
-    cursor.execute(f"PRAGMA table_info({table})")
-    columns = {row[1] for row in cursor.fetchall()}
+    """Add a column to an existing MySQL table without losing data."""
+    cursor.execute(
+        """SELECT COLUMN_NAME FROM information_schema.columns
+           WHERE table_schema = DATABASE() AND LOWER(table_name) = %s""",
+        (table.lower(),),
+    )
+    columns = {row[0] for row in cursor.fetchall()}
     if column not in columns:
         cursor.execute(
             f"ALTER TABLE {table} ADD COLUMN {column} {column_type}"
         )
 
 def connect_db():
-    conn = sqlite3.connect(DB_NAME)
+    conn = connect_db_connection()
     c = conn.cursor()
     # Users for simple auth
     c.execute("""CREATE TABLE IF NOT EXISTS USERS (
-        id TEXT PRIMARY KEY,
+        id VARCHAR(64) PRIMARY KEY,
         name TEXT,
-        email TEXT UNIQUE,
+        email VARCHAR(255) UNIQUE,
         password TEXT,
         token TEXT
     )""")
@@ -67,7 +125,7 @@ def connect_db():
     # longitudinal mood analytics feature.  The migration below keeps older
     # team databases compatible by adding the new columns when needed.
     c.execute("""CREATE TABLE IF NOT EXISTS MOOD_CHECKINS (
-        id TEXT PRIMARY KEY,
+        id VARCHAR(64) PRIMARY KEY,
         user_id TEXT,
         answers TEXT,
         created_at TEXT
@@ -78,7 +136,7 @@ def connect_db():
 
     # Theme palettes (detailed schema expected by frontend)
     c.execute("""CREATE TABLE IF NOT EXISTS THEME_PALETTES (
-        id TEXT PRIMARY KEY,
+        id VARCHAR(64) PRIMARY KEY,
         name TEXT,
         category TEXT,
         primary_color TEXT,
@@ -93,21 +151,21 @@ def connect_db():
 
     # User selected theme
     c.execute("""CREATE TABLE IF NOT EXISTS USER_THEME (
-        user_id TEXT PRIMARY KEY,
+        user_id VARCHAR(64) PRIMARY KEY,
         palette_id TEXT,
         selected_at TEXT
     )""")
 
     # --- Feature 2 tables ---
     c.execute("""CREATE TABLE IF NOT EXISTS GROUNDING_SESSIONS (
-        id TEXT PRIMARY KEY,
+        id VARCHAR(64) PRIMARY KEY,
         user_id TEXT,
         created_at TEXT,
         completed INTEGER DEFAULT 0
     )""")
 
     c.execute("""CREATE TABLE IF NOT EXISTS GROUNDING_ENTRIES (
-        id TEXT PRIMARY KEY,
+        id VARCHAR(64) PRIMARY KEY,
         session_id TEXT,
         category TEXT,
         item_text TEXT
@@ -115,7 +173,7 @@ def connect_db():
 
     # Sleep Tracking tables
     c.execute("""CREATE TABLE IF NOT EXISTS SLEEP_LOGS (
-        id TEXT PRIMARY KEY,
+        id VARCHAR(64) PRIMARY KEY,
         user_id TEXT,
         date TEXT,
         sleep_hours INTEGER,
@@ -127,7 +185,7 @@ def connect_db():
     )""")
 
     c.execute("""CREATE TABLE IF NOT EXISTS WELLBEING_WARNINGS (
-        id TEXT PRIMARY KEY,
+        id VARCHAR(64) PRIMARY KEY,
         user_id TEXT,
         title TEXT,
         message TEXT,
@@ -137,7 +195,7 @@ def connect_db():
 
     # Breathing Exercise Sessions
     c.execute("""CREATE TABLE IF NOT EXISTS BREATHING_SESSIONS (
-        id TEXT PRIMARY KEY,
+        id VARCHAR(64) PRIMARY KEY,
         user_id TEXT,
         technique TEXT,
         duration_seconds INTEGER,
@@ -147,6 +205,44 @@ def connect_db():
         created_at TEXT
     )""")
 
+<<<<<<< Updated upstream
+=======
+
+    # Module 1: Zero-Knowledge Anonymous Community Forum
+    c.execute("""CREATE TABLE IF NOT EXISTS COMMUNITY_POSTS (
+        id VARCHAR(64) PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        body TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        is_hidden INTEGER DEFAULT 0
+    )""")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS COMMUNITY_REPORTS (
+        id VARCHAR(64) PRIMARY KEY,
+        post_id TEXT NOT NULL,
+        reporter_user_id TEXT NOT NULL,
+        reason TEXT,
+        created_at TEXT NOT NULL
+    )""")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS COMMUNITY_COMMENTS (
+        id VARCHAR(64) PRIMARY KEY,
+        post_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        body TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        is_hidden INTEGER DEFAULT 0
+    )""")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS COMMUNITY_COMMENT_REPORTS (
+        id VARCHAR(64) PRIMARY KEY,
+        comment_id TEXT NOT NULL,
+        reporter_user_id TEXT NOT NULL,
+        reason TEXT,
+        created_at TEXT NOT NULL
+    )""")
+
+>>>>>>> Stashed changes
     conn.commit()
     seed_palettes(conn)
     conn.close()
@@ -250,7 +346,7 @@ def _extract_token(auth_header: Optional[str]) -> Optional[str]:
 
 
 def get_user_by_token(token: str) -> Optional[Dict]:
-    conn = sqlite3.connect(DB_NAME)
+    conn = connect_db_connection()
     c = conn.cursor()
     c.execute("SELECT id, name, email FROM USERS WHERE token=?", (token,))
     row = c.fetchone()
@@ -277,7 +373,7 @@ def require_user(auth_header: Optional[str]):
 
 @app.post("/auth/signup")
 def signup(req: SignupRequest):
-    conn = sqlite3.connect(DB_NAME)
+    conn = connect_db_connection()
     c = conn.cursor()
     c.execute("SELECT id FROM USERS WHERE email=?", (req.email,))
     if c.fetchone():
@@ -295,7 +391,7 @@ def signup(req: SignupRequest):
 
 @app.post("/auth/login")
 def login(req: LoginRequest):
-    conn = sqlite3.connect(DB_NAME)
+    conn = connect_db_connection()
     c = conn.cursor()
     email_clean = req.email.strip().lower()
     pw_clean = req.password.strip()
@@ -366,7 +462,7 @@ def checkin(req: CheckinRequest, authorization: Optional[str] = Header(None)):
     checkin_id = uuid.uuid4().hex
     created_at = now()
 
-    conn = sqlite3.connect(DB_NAME)
+    conn = connect_db_connection()
     c = conn.cursor()
     c.execute(
         """INSERT INTO MOOD_CHECKINS
@@ -384,7 +480,7 @@ def checkin(req: CheckinRequest, authorization: Optional[str] = Header(None)):
     conn.commit()
 
     if dominant == "normal":
-        c.execute("SELECT * FROM THEME_PALETTES ORDER BY RANDOM() LIMIT 3")
+        c.execute("SELECT * FROM THEME_PALETTES ORDER BY RAND() LIMIT 3")
     else:
         c.execute("SELECT * FROM THEME_PALETTES WHERE category=?", (dominant,))
     rows = c.fetchall()
@@ -447,7 +543,7 @@ def get_mood_analytics(
 
     cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
 
-    conn = sqlite3.connect(DB_NAME)
+    conn = connect_db_connection()
     c = conn.cursor()
     c.execute(
         """SELECT created_at, mood_score, dominant_category
@@ -482,9 +578,15 @@ def get_mood_analytics(
 @app.post("/themes/select")
 def api_select_theme(req: SelectThemeRequest, authorization: Optional[str] = Header(None)):
     user = require_user(authorization)
-    conn = sqlite3.connect(DB_NAME)
+    conn = connect_db_connection()
     c = conn.cursor()
-    c.execute("INSERT OR REPLACE INTO USER_THEME VALUES (?, ?, ?)", (user["id"], req.palette_id, now()))
+    c.execute(
+        """INSERT INTO USER_THEME (user_id, palette_id, selected_at) VALUES (?, ?, ?)
+           ON DUPLICATE KEY UPDATE
+             palette_id = VALUES(palette_id),
+             selected_at = VALUES(selected_at)""",
+        (user["id"], req.palette_id, now()),
+    )
     conn.commit()
     conn.close()
     return {"response": "Theme saved"}
@@ -493,7 +595,7 @@ def api_select_theme(req: SelectThemeRequest, authorization: Optional[str] = Hea
 @app.get("/themes/selected/me")
 def api_fetch_selected_theme(authorization: Optional[str] = Header(None)):
     user = require_user(authorization)
-    conn = sqlite3.connect(DB_NAME)
+    conn = connect_db_connection()
     c = conn.cursor()
     c.execute("SELECT p.* FROM USER_THEME u JOIN THEME_PALETTES p ON u.palette_id = p.id WHERE u.user_id=?", (user["id"],))
     row = c.fetchone()
@@ -522,7 +624,7 @@ def api_clear_selected_theme(authorization: Optional[str] = Header(None)):
     doesn't automatically get the previously selected theme until they
     re-do the check-in."""
     user = require_user(authorization)
-    conn = sqlite3.connect(DB_NAME)
+    conn = connect_db_connection()
     c = conn.cursor()
     c.execute("DELETE FROM USER_THEME WHERE user_id=?", (user["id"],))
     conn.commit()
@@ -545,7 +647,7 @@ def start_grounding_session(
 ):
     user = require_user(authorization)
     session_id = uuid.uuid4().hex
-    conn = sqlite3.connect(DB_NAME)
+    conn = connect_db_connection()
     c = conn.cursor()
     c.execute(
         "INSERT INTO GROUNDING_SESSIONS VALUES (?, ?, ?, 0)",
@@ -567,7 +669,7 @@ def add_grounding_entries(
     authorization: Optional[str] = Header(None),
 ):
     user = require_user(authorization)
-    conn = sqlite3.connect(DB_NAME)
+    conn = connect_db_connection()
     c = conn.cursor()
     c.execute(
         "SELECT id FROM GROUNDING_SESSIONS WHERE id=? AND user_id=?",
@@ -611,7 +713,7 @@ def get_grounding_session(
     authorization: Optional[str] = Header(None),
 ):
     user = require_user(authorization)
-    conn = sqlite3.connect(DB_NAME)
+    conn = connect_db_connection()
     c = conn.cursor()
     c.execute(
         "SELECT * FROM GROUNDING_SESSIONS WHERE id=? AND user_id=?",
@@ -650,7 +752,7 @@ def get_grounding_history(
     user = require_user(authorization)
     if user_id != user["id"]:
         raise HTTPException(status_code=403, detail="You can only view your own history")
-    conn = sqlite3.connect(DB_NAME)
+    conn = connect_db_connection()
     c = conn.cursor()
     c.execute(
         "SELECT id, created_at, completed FROM GROUNDING_SESSIONS WHERE user_id=? ORDER BY created_at DESC",
@@ -679,7 +781,7 @@ def save_sleep_log(
     user_id = user["id"]
     
     sleep_id = str(uuid.uuid4())
-    conn = sqlite3.connect(DB_NAME)
+    conn = connect_db_connection()
     c = conn.cursor()
     
     c.execute(
@@ -727,7 +829,7 @@ def get_sleep_logs(
     user = require_user(authorization)
     user_id = user["id"]
     
-    conn = sqlite3.connect(DB_NAME)
+    conn = connect_db_connection()
     c = conn.cursor()
     
     # Get logs from last N days
@@ -765,7 +867,7 @@ def get_sleep_metrics(
     user = require_user(authorization)
     user_id = user["id"]
     
-    conn = sqlite3.connect(DB_NAME)
+    conn = connect_db_connection()
     c = conn.cursor()
     
     cutoff_date = (datetime.utcnow() - __import__('datetime').timedelta(days=days)).isoformat()
@@ -822,7 +924,7 @@ def get_sleep_mood_correlation(
     user = require_user(authorization)
     user_id = user["id"]
     
-    conn = sqlite3.connect(DB_NAME)
+    conn = connect_db_connection()
     c = conn.cursor()
     
     cutoff_date = (datetime.utcnow() - __import__('datetime').timedelta(days=days)).isoformat()
@@ -880,7 +982,7 @@ def get_wellbeing_warnings(
     user = require_user(authorization)
     user_id = user["id"]
     
-    conn = sqlite3.connect(DB_NAME)
+    conn = connect_db_connection()
     c = conn.cursor()
     
     c.execute(
@@ -912,7 +1014,7 @@ def dismiss_warning(
     user = require_user(authorization)
     user_id = user["id"]
     
-    conn = sqlite3.connect(DB_NAME)
+    conn = connect_db_connection()
     c = conn.cursor()
     
     c.execute(
@@ -935,7 +1037,7 @@ def delete_sleep_log(
     user = require_user(authorization)
     user_id = user["id"]
     
-    conn = sqlite3.connect(DB_NAME)
+    conn = connect_db_connection()
     c = conn.cursor()
     
     c.execute(
@@ -951,7 +1053,7 @@ def delete_sleep_log(
 
 def _check_wellbeing_warnings(user_id: str):
     """Check sleep-mood correlation and create warnings if needed."""
-    conn = sqlite3.connect(DB_NAME)
+    conn = connect_db_connection()
     c = conn.cursor()
     
     # Get last 7 days of sleep data
@@ -1035,7 +1137,7 @@ def save_breathing_session(
     session_id = str(uuid.uuid4())
     created_timestamp = now()
 
-    conn = sqlite3.connect(DB_NAME)
+    conn = connect_db_connection()
     c = conn.cursor()
     c.execute(
         """INSERT INTO BREATHING_SESSIONS 
@@ -1076,7 +1178,7 @@ def get_breathing_history(
     user = require_user(authorization)
     user_id = user["id"]
 
-    conn = sqlite3.connect(DB_NAME)
+    conn = connect_db_connection()
     c = conn.cursor()
     c.execute(
         """SELECT id, user_id, technique, duration_seconds, cycles_completed, background_sound, mood_after, created_at
@@ -1111,7 +1213,7 @@ def get_breathing_metrics(
     user = require_user(authorization)
     user_id = user["id"]
 
-    conn = sqlite3.connect(DB_NAME)
+    conn = connect_db_connection()
     c = conn.cursor()
 
     # Total sessions, total seconds, total cycles
@@ -1173,7 +1275,7 @@ def delete_breathing_session(
     user = require_user(authorization)
     user_id = user["id"]
 
-    conn = sqlite3.connect(DB_NAME)
+    conn = connect_db_connection()
     c = conn.cursor()
     c.execute(
         "DELETE FROM BREATHING_SESSIONS WHERE id=? AND user_id=?",
@@ -1182,4 +1284,333 @@ def delete_breathing_session(
     conn.commit()
     conn.close()
 
+<<<<<<< Updated upstream
     return {"success": True}
+=======
+    return {"success": True}
+
+# =====================================================================
+# MODULE 1 — ZERO-KNOWLEDGE ANONYMOUS COMMUNITY FORUM
+# =====================================================================
+
+class CommunityPostRequest(BaseModel):
+    content: str
+
+
+class CommunityReportRequest(BaseModel):
+    reason: Optional[str] = "Harmful or triggering content"
+
+class CommunityCommentRequest(BaseModel):
+    content: str
+
+
+class CommunityCommentReportRequest(BaseModel):
+    reason: Optional[str] = "Harmful or inappropriate comment"
+
+
+_COMMUNITY_ADJECTIVES = (
+    "Quiet", "Gentle", "Calm", "Kind", "Brave", "Hopeful",
+    "Silver", "Soft", "Warm", "Steady", "Open", "Bright",
+)
+_COMMUNITY_NOUNS = (
+    "Cedar", "River", "Cloud", "Meadow", "Moon", "Willow",
+    "Harbor", "Dawn", "Fern", "Rain", "Sky", "Lotus",
+)
+
+
+def _community_alias(user_id: str) -> str:
+    """Generate a deterministic pseudonym without exposing user PII."""
+    digest = hashlib.sha256(user_id.encode("utf-8")).digest()
+    adjective = _COMMUNITY_ADJECTIVES[digest[0] % len(_COMMUNITY_ADJECTIVES)]
+    noun = _COMMUNITY_NOUNS[digest[1] % len(_COMMUNITY_NOUNS)]
+    suffix = int.from_bytes(digest[2:4], "big") % 90 + 10
+    return f"Anonymous {adjective} {noun} {suffix}"
+
+
+def _scrub_community_pii(text: str) -> str:
+    """Remove common contact PII before public storage/rendering."""
+    value = " ".join(text.strip().split())
+    value = re.sub(
+        r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",
+        "[email removed]",
+        value,
+    )
+    value = re.sub(
+        r"(?<!\w)(?:\+?880[\s-]?)?01[3-9](?:[\s-]?\d){8}(?!\w)",
+        "[phone removed]",
+        value,
+    )
+    value = re.sub(
+        r"(?<!\w)\+?\d[\d\s().-]{8,}\d(?!\w)",
+        "[phone removed]",
+        value,
+    )
+    return value[:1000].strip()
+
+
+def _public_community_post(
+    row,
+    report_count: int = 0,
+    comment_count: int = 0,
+):
+    return {
+        "id": row[0],
+        "author_alias": _community_alias(row[1]),
+        "content": row[2],
+        "created_at": row[3],
+        "report_count": report_count,
+        "comment_count": comment_count,
+    }
+
+
+def _public_community_comment(row, report_count: int = 0):
+    return {
+        "id": row[0],
+        "post_id": row[1],
+        "author_alias": _community_alias(row[2]),
+        "content": row[3],
+        "created_at": row[4],
+        "report_count": report_count,
+    }
+
+
+@app.get("/community/posts")
+def get_community_posts(
+    limit: int = 50,
+    authorization: Optional[str] = Header(None),
+):
+    require_user(authorization)
+    limit = max(1, min(100, limit))
+
+    conn = connect_db_connection()
+    c = conn.cursor()
+    c.execute(
+        """SELECT p.id, p.user_id, p.body, p.created_at,
+                  (SELECT COUNT(*) FROM COMMUNITY_REPORTS r
+                   WHERE r.post_id = p.id) AS report_count,
+                  (SELECT COUNT(*) FROM COMMUNITY_COMMENTS cc
+                   WHERE cc.post_id = p.id AND cc.is_hidden = 0) AS comment_count
+           FROM COMMUNITY_POSTS p
+           WHERE p.is_hidden = 0
+           ORDER BY p.created_at DESC
+           LIMIT ?""",
+        (limit,),
+    )
+    rows = c.fetchall()
+    conn.close()
+    return [
+        _public_community_post(
+            row[:4],
+            int(row[4] or 0),
+            int(row[5] or 0),
+        )
+        for row in rows
+    ]
+
+
+@app.post("/community/posts")
+def create_community_post(
+    req: CommunityPostRequest,
+    authorization: Optional[str] = Header(None),
+):
+    user = require_user(authorization)
+    cleaned = _scrub_community_pii(req.content)
+    if len(cleaned) < 2:
+        raise HTTPException(status_code=400, detail="Post is too short")
+
+    post_id = uuid.uuid4().hex
+    created_at = now()
+
+    conn = connect_db_connection()
+    c = conn.cursor()
+    c.execute(
+        """INSERT INTO COMMUNITY_POSTS
+           (id, user_id, body, created_at, is_hidden)
+           VALUES (?, ?, ?, ?, 0)""",
+        (post_id, user["id"], cleaned, created_at),
+    )
+    conn.commit()
+    conn.close()
+
+    return {
+        "id": post_id,
+        "author_alias": _community_alias(user["id"]),
+        "content": cleaned,
+        "created_at": created_at,
+        "report_count": 0,
+        "comment_count": 0,
+    }
+
+
+@app.post("/community/posts/{post_id}/report")
+def report_community_post(
+    post_id: str,
+    req: CommunityReportRequest,
+    authorization: Optional[str] = Header(None),
+):
+    """Module 1 records reports only; later modules handle AI/quarantine."""
+    user = require_user(authorization)
+    reason = _scrub_community_pii(req.reason or "")[:200] or "Community report"
+
+    conn = connect_db_connection()
+    c = conn.cursor()
+    c.execute(
+        "SELECT id FROM COMMUNITY_POSTS WHERE id=? AND is_hidden=0",
+        (post_id,),
+    )
+    if c.fetchone() is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Community post not found")
+
+    c.execute(
+        """SELECT id FROM COMMUNITY_REPORTS
+           WHERE post_id=? AND reporter_user_id=?""",
+        (post_id, user["id"]),
+    )
+    if c.fetchone() is not None:
+        conn.close()
+        return {
+            "success": True,
+            "already_reported": True,
+            "message": "You already reported this post.",
+        }
+
+    c.execute(
+        """INSERT INTO COMMUNITY_REPORTS
+           (id, post_id, reporter_user_id, reason, created_at)
+           VALUES (?, ?, ?, ?, ?)""",
+        (uuid.uuid4().hex, post_id, user["id"], reason, now()),
+    )
+    conn.commit()
+    conn.close()
+    return {
+        "success": True,
+        "already_reported": False,
+        "message": "Report received for review.",
+    }
+
+@app.get("/community/posts/{post_id}/comments")
+def get_community_comments(
+    post_id: str,
+    limit: int = 100,
+    authorization: Optional[str] = Header(None),
+):
+    require_user(authorization)
+    limit = max(1, min(200, limit))
+
+    conn = connect_db_connection()
+    c = conn.cursor()
+    c.execute(
+        "SELECT id FROM COMMUNITY_POSTS WHERE id=? AND is_hidden=0",
+        (post_id,),
+    )
+    if c.fetchone() is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Community post not found")
+
+    c.execute(
+        """SELECT cc.id, cc.post_id, cc.user_id, cc.body, cc.created_at,
+                  (SELECT COUNT(*) FROM COMMUNITY_COMMENT_REPORTS cr
+                   WHERE cr.comment_id = cc.id) AS report_count
+           FROM COMMUNITY_COMMENTS cc
+           WHERE cc.post_id=? AND cc.is_hidden=0
+           ORDER BY cc.created_at ASC
+           LIMIT ?""",
+        (post_id, limit),
+    )
+    rows = c.fetchall()
+    conn.close()
+    return [
+        _public_community_comment(row[:5], int(row[5] or 0))
+        for row in rows
+    ]
+
+
+@app.post("/community/posts/{post_id}/comments")
+def create_community_comment(
+    post_id: str,
+    req: CommunityCommentRequest,
+    authorization: Optional[str] = Header(None),
+):
+    user = require_user(authorization)
+    cleaned = _scrub_community_pii(req.content)
+    if len(cleaned) < 1:
+        raise HTTPException(status_code=400, detail="Comment is too short")
+
+    conn = connect_db_connection()
+    c = conn.cursor()
+    c.execute(
+        "SELECT id FROM COMMUNITY_POSTS WHERE id=? AND is_hidden=0",
+        (post_id,),
+    )
+    if c.fetchone() is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Community post not found")
+
+    comment_id = uuid.uuid4().hex
+    created_at = now()
+    c.execute(
+        """INSERT INTO COMMUNITY_COMMENTS
+           (id, post_id, user_id, body, created_at, is_hidden)
+           VALUES (?, ?, ?, ?, ?, 0)""",
+        (comment_id, post_id, user["id"], cleaned, created_at),
+    )
+    conn.commit()
+    conn.close()
+
+    return {
+        "id": comment_id,
+        "post_id": post_id,
+        "author_alias": _community_alias(user["id"]),
+        "content": cleaned,
+        "created_at": created_at,
+        "report_count": 0,
+    }
+
+
+@app.post("/community/comments/{comment_id}/report")
+def report_community_comment(
+    comment_id: str,
+    req: CommunityCommentReportRequest,
+    authorization: Optional[str] = Header(None),
+):
+    user = require_user(authorization)
+    reason = _scrub_community_pii(req.reason or "")[:200] or "Community comment report"
+
+    conn = connect_db_connection()
+    c = conn.cursor()
+    c.execute(
+        "SELECT id FROM COMMUNITY_COMMENTS WHERE id=? AND is_hidden=0",
+        (comment_id,),
+    )
+    if c.fetchone() is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Community comment not found")
+
+    c.execute(
+        """SELECT id FROM COMMUNITY_COMMENT_REPORTS
+           WHERE comment_id=? AND reporter_user_id=?""",
+        (comment_id, user["id"]),
+    )
+    if c.fetchone() is not None:
+        conn.close()
+        return {
+            "success": True,
+            "already_reported": True,
+            "message": "You already reported this comment.",
+        }
+
+    c.execute(
+        """INSERT INTO COMMUNITY_COMMENT_REPORTS
+           (id, comment_id, reporter_user_id, reason, created_at)
+           VALUES (?, ?, ?, ?, ?)""",
+        (uuid.uuid4().hex, comment_id, user["id"], reason, now()),
+    )
+    conn.commit()
+    conn.close()
+    return {
+        "success": True,
+        "already_reported": False,
+        "message": "Comment report received for review.",
+    }
+>>>>>>> Stashed changes
