@@ -17,9 +17,6 @@ import json
 import hashlib
 import re
 import sqlite3
-=======
-import hashlib
-import re
 import uuid
 from datetime import datetime
 import os
@@ -205,6 +202,9 @@ def connect_db():
         created_at TEXT
     )""")
 
+    # Module 1: Zero-Knowledge Anonymous Community Forum
+    c.execute("""CREATE TABLE IF NOT EXISTS COMMUNITY_POSTS (
+        id VARCHAR(64) PRIMARY KEY,
         user_id TEXT NOT NULL,
         body TEXT NOT NULL,
         created_at TEXT NOT NULL,
