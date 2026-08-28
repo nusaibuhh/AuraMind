@@ -36,7 +36,16 @@ FastAPI/.env
 
 # Python development artifacts
 .venv/
+FastAPI/myenv/
 __pycache__/
+**/**/__pycache__/
 .pytest_cache/
 *.py[cod]
 .test_runtime_deps/
+
+# Large model weight files (> 100 MB GitHub limit)
+*.safetensors
+*.onnx
+*.pt
+*.pth
+*.bin

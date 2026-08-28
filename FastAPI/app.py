@@ -23,12 +23,14 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Dict, Optional
 
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Header, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, model_validator
 import pymysql
 from pymysql.err import IntegrityError
 from dotenv import load_dotenv
+
+from risk_detector import scan_and_alert_emergency_contact
 
 app = FastAPI(title="AuraMind API")
 load_dotenv(Path(__file__).resolve().parent / ".env")
@@ -676,6 +678,8 @@ def update_profile(req: UpdateProfileRequest, authorization: Optional[str] = Hea
     emergency_contact = (req.emergency_contact or "").strip() or None
     if not name or "@" not in email:
         raise HTTPException(status_code=400, detail="Enter a valid name and email")
+    if emergency_contact and "@" not in emergency_contact:
+        raise HTTPException(status_code=400, detail="Enter a valid emergency contact email")
     conn = connect_db_connection()
     c = conn.cursor()
     c.execute("SELECT id FROM USERS WHERE email=? AND id<>?", (email, user["id"]))
@@ -1629,6 +1633,7 @@ def get_community_posts(
 @app.post("/community/posts")
 def create_community_post(
     req: CommunityPostRequest,
+    background_tasks: BackgroundTasks,
     authorization: Optional[str] = Header(None),
 ):
     user = require_user(authorization)
@@ -1649,6 +1654,12 @@ def create_community_post(
     )
     conn.commit()
     conn.close()
+
+    background_tasks.add_task(
+        scan_and_alert_emergency_contact,
+        text=req.content,
+        user_id=user["id"],
+    )
 
     return {
         "id": post_id,
@@ -1748,6 +1759,7 @@ def get_community_comments(
 def create_community_comment(
     post_id: str,
     req: CommunityCommentRequest,
+    background_tasks: BackgroundTasks,
     authorization: Optional[str] = Header(None),
 ):
     user = require_user(authorization)
@@ -1775,6 +1787,12 @@ def create_community_comment(
     )
     conn.commit()
     conn.close()
+
+    background_tasks.add_task(
+        scan_and_alert_emergency_contact,
+        text=req.content,
+        user_id=user["id"],
+    )
 
     return {
         "id": comment_id,
@@ -1876,6 +1894,7 @@ def get_journal_entries(
 @app.post("/journal/entries")
 def create_journal_entry(
     req: SaveJournalEntryRequest,
+    background_tasks: BackgroundTasks,
     authorization: Optional[str] = Header(None),
 ):
     """Create a new journal / note / thought entry for the user."""
@@ -1900,6 +1919,12 @@ def create_journal_entry(
     conn.commit()
     conn.close()
 
+    background_tasks.add_task(
+        scan_and_alert_emergency_contact,
+        text=f"{title} {content}".strip(),
+        user_id=user["id"],
+    )
+
     return {
         "id": entry_id,
         "user_id": user["id"],
@@ -1915,6 +1940,7 @@ def create_journal_entry(
 def update_journal_entry(
     entry_id: str,
     req: UpdateJournalEntryRequest,
+    background_tasks: BackgroundTasks,
     authorization: Optional[str] = Header(None),
 ):
     """Update an existing journal entry."""
@@ -1945,6 +1971,12 @@ def update_journal_entry(
     )
     conn.commit()
     conn.close()
+
+    background_tasks.add_task(
+        scan_and_alert_emergency_contact,
+        text=f"{title} {content}".strip(),
+        user_id=user["id"],
+    )
 
     return {
         "id": entry_id,
