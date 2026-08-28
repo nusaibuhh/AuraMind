@@ -15,7 +15,7 @@ class SleepInsightsScreen extends StatefulWidget {
 }
 
 class _SleepInsightsScreenState extends State<SleepInsightsScreen> {
-  int _selectedDays = 7;  // Default to 7 days instead of 30
+  int _selectedDays = 7; // Default to 7 days instead of 30
 
   @override
   void initState() {
@@ -289,16 +289,26 @@ class _WellbeingSection extends StatelessWidget {
     final recentCount = (data.length / 2).ceil();
     final older = data.sublist(0, data.length - recentCount);
     final recent = data.sublist(data.length - recentCount);
-    final olderAvg = older.map((c) => c.moodScore).reduce((a, b) => a + b) / older.length;
-    final recentAvg = recent.map((c) => c.moodScore).reduce((a, b) => a + b) / recent.length;
+    final olderAvg =
+        older.map((c) => c.moodScore).reduce((a, b) => a + b) / older.length;
+    final recentAvg =
+        recent.map((c) => c.moodScore).reduce((a, b) => a + b) / recent.length;
     return (recentAvg, olderAvg);
   }
 
   @override
   Widget build(BuildContext context) {
     final sleepTrend = metrics.getTrend();
-    final sleepTrendText = sleepTrend > 0 ? '↑ ' : sleepTrend < 0 ? '↓ ' : '';
-    final sleepTrendColor = sleepTrend > 0 ? Colors.green : sleepTrend < 0 ? Colors.red : Colors.grey;
+    final sleepTrendText = sleepTrend > 0
+        ? '↑ '
+        : sleepTrend < 0
+            ? '↓ '
+            : '';
+    final sleepTrendColor = sleepTrend > 0
+        ? Colors.green
+        : sleepTrend < 0
+            ? Colors.red
+            : Colors.grey;
 
     // Real mood data comes from mood check-ins (via /sleep/correlation),
     // not from sleep quality — those are two different things.
@@ -341,7 +351,8 @@ class _WellbeingSection extends StatelessWidget {
                 label: 'Average Sleep',
                 value: '${metrics.averageSleep.toStringAsFixed(1)}h',
                 unit: '05m',
-                trend: '$sleepTrendText${(metrics.getTrend().abs()).toStringAsFixed(1)}h',
+                trend:
+                    '$sleepTrendText${(metrics.getTrend().abs()).toStringAsFixed(1)}h',
                 trendColor: sleepTrendColor,
               ),
             ),
@@ -349,8 +360,11 @@ class _WellbeingSection extends StatelessWidget {
             Expanded(
               child: _MetricCard(
                 label: 'Average Mood',
-                value: hasMoodData ? '${avgMood!.toStringAsFixed(1)}/10' : 'No check-ins yet',
-                unit: hasMoodData ? 'from mood check-ins' : 'Log a mood check-in',
+                value: hasMoodData
+                    ? '${avgMood!.toStringAsFixed(1)}/10'
+                    : 'No check-ins yet',
+                unit:
+                    hasMoodData ? 'from mood check-ins' : 'Log a mood check-in',
                 trend: moodTrendText,
                 trendColor: moodTrendColor,
               ),
@@ -436,12 +450,17 @@ class _CorrelationChart extends StatelessWidget {
     final maxSleep =
         correlations.map((c) => c.sleepHours).reduce((a, b) => a > b ? a : b);
     const maxMood = 10.0;
+    final recordedActivityDays =
+        correlations.where((item) => item.hasBehavioralActivity).toList();
+    final completedActivityDays = recordedActivityDays
+        .where((item) => item.behavioralActivityCompleted)
+        .length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Sleep & Mood Correlation',
+          'Sleep, Mood & Tiny-Step Patterns',
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w600,
               ),
@@ -449,7 +468,8 @@ class _CorrelationChart extends StatelessWidget {
         const SizedBox(height: 12),
         Card(
           elevation: 0,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -470,13 +490,14 @@ class _CorrelationChart extends StatelessWidget {
                 ),
                 const SizedBox(height: 16),
                 // Legend
-                Row(
+                Wrap(
+                  spacing: 24,
+                  runSpacing: 8,
                   children: [
                     _LegendItem(
                       label: 'Sleep (hours)',
                       color: palette.primary,
                     ),
-                    const SizedBox(width: 24),
                     _LegendItem(
                       label: 'Mood (score)',
                       color: palette.accent,
@@ -485,12 +506,21 @@ class _CorrelationChart extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Correlation: Higher sleep correlates with better mood scores',
+                  'This chart places your recorded sleep and mood on the same dates. It shows co-occurring patterns, not cause and effect.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Colors.grey,
                         fontStyle: FontStyle.italic,
                       ),
                 ),
+                if (recordedActivityDays.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'A tiny step was recorded as completed on $completedActivityDays of ${recordedActivityDays.length} charted activity days. Skipped or pending steps remain part of the record without penalty.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.grey[700],
+                        ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -553,7 +583,8 @@ class _LineChartPainter extends CustomPainter {
     const padding = 30.0;
     final chartWidth = size.width - (padding * 2);
     final chartHeight = size.height - (padding * 2);
-    final stepX = chartWidth / (correlations.length - 1).clamp(1, double.infinity);
+    final stepX =
+        chartWidth / (correlations.length - 1).clamp(1, double.infinity);
 
     // Draw sleep line
     final sleepPaint = Paint()

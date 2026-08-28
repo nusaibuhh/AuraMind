@@ -79,15 +79,16 @@ class SleepMetrics {
   double getTrend() {
     if (entries.length < 2) return 0.0;
     final recentHalf = (entries.length / 2).ceil();
-    final olderAvg = entries.sublist(0, entries.length - recentHalf).fold<double>(
-          0,
-          (sum, log) => sum + log.totalHours,
-        ) /
-        (entries.length - recentHalf);
+    final olderAvg =
+        entries.sublist(0, entries.length - recentHalf).fold<double>(
+                  0,
+                  (sum, log) => sum + log.totalHours,
+                ) /
+            (entries.length - recentHalf);
     final recentAvg = entries.sublist(entries.length - recentHalf).fold<double>(
-          0,
-          (sum, log) => sum + log.totalHours,
-        ) /
+              0,
+              (sum, log) => sum + log.totalHours,
+            ) /
         recentHalf;
     return recentAvg - olderAvg;
   }
@@ -98,18 +99,27 @@ class SleepMoodCorrelation {
   final DateTime date;
   final double sleepHours;
   final double moodScore; // 0-10 scale
+  final String? behavioralStatus;
+  final String? behavioralActivityTitle;
 
   SleepMoodCorrelation({
     required this.date,
     required this.sleepHours,
     required this.moodScore,
+    this.behavioralStatus,
+    this.behavioralActivityTitle,
   });
+
+  bool get hasBehavioralActivity => behavioralStatus != null;
+  bool get behavioralActivityCompleted => behavioralStatus == 'completed';
 
   factory SleepMoodCorrelation.fromJson(Map<String, dynamic> json) {
     return SleepMoodCorrelation(
       date: DateTime.parse(json['date'] as String),
       sleepHours: (json['sleep_hours'] as num).toDouble(),
       moodScore: (json['mood_score'] as num).toDouble(),
+      behavioralStatus: json['behavioral_status'] as String?,
+      behavioralActivityTitle: json['behavioral_activity_title'] as String?,
     );
   }
 }
