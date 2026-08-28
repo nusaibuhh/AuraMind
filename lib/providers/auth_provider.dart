@@ -14,6 +14,7 @@ class AuthUser {
     required this.name,
 
     required this.email,
+    this.emergencyContact,
 
   });
 
@@ -24,6 +25,7 @@ class AuthUser {
   final String name;
 
   final String email;
+  final String? emergencyContact;
 
 }
 
@@ -45,8 +47,15 @@ class AuthProvider extends ChangeNotifier {
       final email = prefs.getString('user_email');
       if (token != null && userId != null && name != null && email != null) {
         _token = token;
-        _user = AuthUser(id: userId, name: name, email: email);
+        _user = AuthUser(id: userId, name: name, email: email, emergencyContact: prefs.getString('emergency_contact'));
         _api.setToken(_token);
+        try {
+          final profile = await _api.getProfile();
+          _user = AuthUser(id: userId, name: profile.name, email: profile.email, emergencyContact: profile.emergencyContact);
+          await prefs.setString('user_name', profile.name);
+          await prefs.setString('user_email', profile.email);
+          if (profile.emergencyContact != null) await prefs.setString('emergency_contact', profile.emergencyContact!);
+        } catch (_) {}
         notifyListeners();
       }
     }();
@@ -272,6 +281,19 @@ class AuthProvider extends ChangeNotifier {
     await prefs.remove('user_email');
 
     notifyListeners();
+  }
+
+  Future<String?> updateProfile({required String name, required String email, required String emergencyContact}) async {
+    try {
+      final result = await _api.updateProfile(name: name.trim(), email: email.trim(), emergencyContact: emergencyContact.trim());
+      _user = AuthUser(id: _user!.id, name: result.name, email: result.email, emergencyContact: result.emergencyContact);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('user_name', result.name);
+      await prefs.setString('user_email', result.email);
+      if (result.emergencyContact == null || result.emergencyContact!.isEmpty) { await prefs.remove('emergency_contact'); } else { await prefs.setString('emergency_contact', result.emergencyContact!); }
+      notifyListeners();
+      return null;
+    } on ApiException catch (e) { return e.message; } catch (_) { return 'Could not save profile changes.'; }
   }
 
 

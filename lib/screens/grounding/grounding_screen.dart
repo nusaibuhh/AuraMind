@@ -1,8 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-
-import '../../providers/auth_provider.dart';
-import '../../services/api_service.dart';
 
 class GroundingScreen extends StatefulWidget {
   const GroundingScreen({super.key});
@@ -74,9 +70,8 @@ const _steps = [
 
 class _GroundingScreenState extends State<GroundingScreen> {
   int _stepIndex = -1;
-  String? _sessionId;
-  bool _isSaving = false;
   List<TextEditingController> _controllers = [];
+  final Map<String, List<String>> _answers = {};
 
   bool get _isIntro => _stepIndex == -1;
   bool get _isComplete => _stepIndex == _steps.length;
@@ -89,23 +84,11 @@ class _GroundingScreenState extends State<GroundingScreen> {
     super.dispose();
   }
 
-  Future<void> _begin() async {
-    setState(() => _isSaving = true);
-    try {
-      final auth = context.read<AuthProvider>();
-      final sessionId = await auth.api.startGroundingSession(auth.user!.id);
-      if (!mounted) return;
-      setState(() {
-        _sessionId = sessionId;
-        _stepIndex = 0;
-        _setControllers();
-        _isSaving = false;
-      });
-    } on ApiException catch (error) {
-      _showError(error.message);
-    } catch (_) {
-      _showError('Could not start grounding session. Check your connection.');
-    }
+  void _begin() {
+    setState(() {
+      _stepIndex = 0;
+      _setControllers();
+    });
   }
 
   void _setControllers() {
@@ -118,46 +101,68 @@ class _GroundingScreenState extends State<GroundingScreen> {
     ];
   }
 
-  Future<void> _continue() async {
+  void _continue() {
     final items = _controllers.map((controller) => controller.text.trim()).toList();
     if (items.any((item) => item.isEmpty)) {
       _showError('Add something for each row before continuing.');
       return;
     }
 
-    setState(() => _isSaving = true);
-    try {
-      await context.read<AuthProvider>().api.addGroundingEntries(
-            sessionId: _sessionId!,
-            category: _steps[_stepIndex].category,
-            items: items,
-          );
-      if (!mounted) return;
+    _answers[_steps[_stepIndex].category] = items;
+    setState(() {
       if (_stepIndex == _steps.length - 1) {
-        setState(() {
-          _stepIndex = _steps.length;
-          _isSaving = false;
-        });
+        _stepIndex = _steps.length;
       } else {
-        setState(() {
-          _stepIndex++;
-          _setControllers();
-          _isSaving = false;
-        });
+        _stepIndex++;
+        _setControllers();
       }
-    } on ApiException catch (error) {
-      _showError(error.message);
-    } catch (_) {
-      _showError('Could not save your entries. Check your connection.');
-    }
+    });
   }
 
   void _showError(String message) {
     if (!mounted) return;
-    setState(() => _isSaving = false);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
     );
+  }
+
+  _GroundingSuggestion get _suggestion {
+    final allAnswers = _answers.values.expand((items) => items).join(' ').toLowerCase();
+    final anchor = _firstAnswer('taste') ??
+        _firstAnswer('touch') ??
+        _firstAnswer('sight') ??
+        'one small detail around you';
+    if (RegExp(r'window|tree|sky|sun|cloud|plant|flower|outside|bird').hasMatch(allAnswers)) {
+      return _GroundingSuggestion(
+        icon: Icons.wb_sunny_outlined,
+        title: 'Stay with the outdoors for a moment',
+        message: 'You noticed “$anchor” and parts of the natural world. If you can, look out a window or step outside for two slow breaths.',
+      );
+    }
+    if (RegExp(r'music|song|voice|laugh|sound|fan|rain').hasMatch(allAnswers)) {
+      return _GroundingSuggestion(
+        icon: Icons.headphones_outlined,
+        title: 'Let one sound anchor you',
+        message: 'You named “$anchor.” Spend one minute listening to the calmest sound you can hear without trying to change it.',
+      );
+    }
+    if (RegExp(r'blanket|pillow|chair|clothes|soft|warm|tea|coffee|water').hasMatch(allAnswers)) {
+      return _GroundingSuggestion(
+        icon: Icons.self_improvement_outlined,
+        title: 'Lean into comfort',
+        message: 'You noticed “$anchor,” a comforting detail. Hold something warm, sit somewhere supported, or take a slow sip of water.',
+      );
+    }
+    return _GroundingSuggestion(
+      icon: Icons.air_outlined,
+      title: 'Carry one detail forward',
+      message: 'You noticed “$anchor.” Keep your attention on it for three slow breaths. You have already returned to the present moment.',
+    );
+  }
+
+  String? _firstAnswer(String category) {
+    final answers = _answers[category];
+    return answers != null && answers.isNotEmpty ? answers.first : null;
   }
 
   @override
@@ -238,14 +243,8 @@ class _GroundingScreenState extends State<GroundingScreen> {
               child: SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: _isSaving ? null : _begin,
-                  child: _isSaving
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Begin'),
+                  onPressed: _begin,
+                  child: const Text('Begin'),
                 ),
               ),
             ),
@@ -366,17 +365,8 @@ class _GroundingScreenState extends State<GroundingScreen> {
                     backgroundColor: step.color,
                     foregroundColor: Colors.white,
                   ),
-                  onPressed: _isSaving ? null : _continue,
-                  child: _isSaving
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Text('Continue'),
+                  onPressed: _continue,
+                  child: const Text('Continue'),
                 ),
               ),
             ),
@@ -387,6 +377,7 @@ class _GroundingScreenState extends State<GroundingScreen> {
   }
 
   Widget _buildComplete(BuildContext context) {
+    final suggestion = _suggestion;
     return Scaffold(
       backgroundColor: const Color(0xFFF5F8F3),
       body: SafeArea(
@@ -408,9 +399,33 @@ class _GroundingScreenState extends State<GroundingScreen> {
                 ),
                 const SizedBox(height: 10),
                 const Text(
-                  'Notice how the present moment feels. You can return to this practice whenever you need it.',
+                  'Your answers stay private on this device and are cleared when you leave this exercise.',
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 15, height: 1.4),
+                ),
+                const SizedBox(height: 22),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFFD5E4D4)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        Icon(suggestion.icon, color: const Color(0xFF52755A)),
+                        const SizedBox(width: 9),
+                        const Text('A gentle next step', style: TextStyle(fontWeight: FontWeight.w700)),
+                      ]),
+                      const SizedBox(height: 10),
+                      Text(suggestion.title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 6),
+                      Text(suggestion.message, style: const TextStyle(height: 1.4)),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 28),
                 SizedBox(
@@ -427,6 +442,18 @@ class _GroundingScreenState extends State<GroundingScreen> {
       ),
     );
   }
+}
+
+class _GroundingSuggestion {
+  const _GroundingSuggestion({
+    required this.icon,
+    required this.title,
+    required this.message,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
 }
 
 class _LandscapePainter extends CustomPainter {

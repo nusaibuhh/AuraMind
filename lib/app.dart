@@ -12,6 +12,7 @@ import 'providers/sleep_provider.dart';
 import 'providers/breathing_provider.dart';
 import 'providers/mood_analytics_provider.dart';
 import 'providers/mood_momentum_provider.dart';
+import 'providers/journal_provider.dart';
 import 'providers/behavioral_activation_provider.dart';
 import 'providers/savoring_provider.dart';
 
@@ -44,6 +45,7 @@ class AuraMindApp extends StatelessWidget {
           create: (_) => MoodAnalyticsProvider(_sharedApiService),
         ),
         ChangeNotifierProvider(create: (_) => MoodMomentumProvider()),
+        ChangeNotifierProvider(create: (_) => JournalProvider(_sharedApiService)),
         ChangeNotifierProvider(
           create: (_) => BehavioralActivationProvider(_sharedApiService),
         ),

@@ -114,17 +114,6 @@ def _ensure_column(cursor, table: str, column: str, column_type: str):
         )
 
 
-def _ensure_index(cursor, table: str, index_name: str, columns: str):
-    """Create a named index once, without altering existing data."""
-    cursor.execute(
-        """SELECT INDEX_NAME FROM information_schema.statistics
-           WHERE table_schema = DATABASE() AND LOWER(table_name) = %s""",
-        (table.lower(),),
-    )
-    existing = {row[0] for row in cursor.fetchall()}
-    if index_name not in existing:
-        cursor.execute(f"CREATE INDEX {index_name} ON {table} ({columns})")
-
 def connect_db():
     conn = connect_db_connection()
     c = conn.cursor()
@@ -138,8 +127,7 @@ def connect_db():
     )""")
 
     # Store raw check-ins and the normalized wellbeing score used by the
-    # longitudinal mood analytics feature.  The migration below keeps older
-    # team databases compatible by adding the new columns when needed.
+    # longitudinal mood analytics feature.
     c.execute("""CREATE TABLE IF NOT EXISTS MOOD_CHECKINS (
         id VARCHAR(64) PRIMARY KEY,
         user_id TEXT,
@@ -171,20 +159,15 @@ def connect_db():
         palette_id TEXT,
         selected_at TEXT
     )""")
+    _ensure_column(c, "USERS", "emergency_contact", "TEXT")
 
-    # --- Feature 2 tables ---
-    c.execute("""CREATE TABLE IF NOT EXISTS GROUNDING_SESSIONS (
+    # Best Possible Self visions are private to the authenticated user.
+    c.execute("""CREATE TABLE IF NOT EXISTS BEST_SELF_VISIONS (
         id VARCHAR(64) PRIMARY KEY,
-        user_id TEXT,
-        created_at TEXT,
-        completed INTEGER DEFAULT 0
-    )""")
-
-    c.execute("""CREATE TABLE IF NOT EXISTS GROUNDING_ENTRIES (
-        id VARCHAR(64) PRIMARY KEY,
-        session_id TEXT,
-        category TEXT,
-        item_text TEXT
+        user_id VARCHAR(64) NOT NULL,
+        timeline INTEGER NOT NULL,
+        vision TEXT NOT NULL,
+        created_at TEXT NOT NULL
     )""")
 
     # Sleep Tracking tables
@@ -255,6 +238,16 @@ def connect_db():
         created_at TEXT NOT NULL
     )""")
 
+    # Journal & Notes entries
+    c.execute("""CREATE TABLE IF NOT EXISTS JOURNAL_ENTRIES (
+        id VARCHAR(64) PRIMARY KEY,
+        user_id VARCHAR(64) NOT NULL,
+        title TEXT,
+        content TEXT NOT NULL,
+        mood_tag TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT
+    )""")
     # --- Behavioral Activation Planner tables ---
     c.execute("""CREATE TABLE IF NOT EXISTS BEHAVIORAL_ACTIVITIES (
         id VARCHAR(64) PRIMARY KEY,
@@ -477,14 +470,17 @@ class SelectThemeRequest(BaseModel):
     palette_id: str
 
 
-class StartSessionRequest(BaseModel):
-    user_id: str
+class UpdateProfileRequest(BaseModel):
+    name: str
+    email: str
+    emergency_contact: Optional[str] = None
 
 
-class AddEntriesRequest(BaseModel):
-    session_id: str
-    category: str  # sight | touch | hear | smell | taste
-    items: List[str]
+class SaveBestSelfVisionRequest(BaseModel):
+    id: str
+    timeline: int
+    vision: str
+    created_at: str
 
 
 # Sleep Tracking Schemas
@@ -506,6 +502,34 @@ class SaveBreathingSessionRequest(BaseModel):
     mood_after: Optional[str] = None
 
 
+# Journal & Notes Schemas
+class SaveJournalEntryRequest(BaseModel):
+    title: Optional[str] = None
+    content: str
+    mood_tag: Optional[str] = None
+
+
+class UpdateJournalEntryRequest(BaseModel):
+    title: Optional[str] = None
+    content: str
+    mood_tag: Optional[str] = None
+
+
+# Community Schemas
+class CommunityPostRequest(BaseModel):
+    content: str
+
+
+class CommunityReportRequest(BaseModel):
+    reason: Optional[str] = "Harmful or triggering content"
+
+
+class CommunityCommentRequest(BaseModel):
+    content: str
+
+
+class CommunityCommentReportRequest(BaseModel):
+    reason: Optional[str] = "Harmful or inappropriate comment"
 # Behavioral Activation Schemas
 class BehavioralMoodRequest(BaseModel):
     mood_before: Optional[int] = Field(default=None, ge=1, le=5)
@@ -547,11 +571,11 @@ def _extract_token(auth_header: Optional[str]) -> Optional[str]:
 def get_user_by_token(token: str) -> Optional[Dict]:
     conn = connect_db_connection()
     c = conn.cursor()
-    c.execute("SELECT id, name, email FROM USERS WHERE token=?", (token,))
+    c.execute("SELECT id, name, email, emergency_contact FROM USERS WHERE token=?", (token,))
     row = c.fetchone()
     conn.close()
     if row:
-        return {"id": row[0], "name": row[1], "email": row[2]}
+        return {"id": row[0], "name": row[1], "email": row[2], "emergency_contact": row[3]}
     return None
 
 
@@ -581,7 +605,7 @@ def signup(req: SignupRequest):
 
     user_id = uuid.uuid4().hex
     token = uuid.uuid4().hex
-    c.execute("INSERT INTO USERS VALUES (?, ?, ?, ?, ?)", (user_id, req.name, req.email, req.password, token))
+    c.execute("INSERT INTO USERS (id, name, email, password, token) VALUES (?, ?, ?, ?, ?)", (user_id, req.name, req.email, req.password, token))
     conn.commit()
     conn.close()
 
@@ -597,8 +621,7 @@ def login(req: LoginRequest):
 
     c.execute("SELECT id, name, password, email FROM USERS WHERE LOWER(TRIM(email))=?", (email_clean,))
     row = c.fetchone()
-    
-    # Check password match (or fallback for jt@gmail.com)
+
     valid = False
     if row:
         db_pw = row[2].strip() if row[2] else ""
@@ -620,15 +643,34 @@ def login(req: LoginRequest):
     return {"user_id": user_id, "name": name, "email": row[3], "access_token": token}
 
 
+@app.put("/profile/me")
+def update_profile(req: UpdateProfileRequest, authorization: Optional[str] = Header(None)):
+    user = require_user(authorization)
+    name = req.name.strip()
+    email = req.email.strip().lower()
+    emergency_contact = (req.emergency_contact or "").strip() or None
+    if not name or "@" not in email:
+        raise HTTPException(status_code=400, detail="Enter a valid name and email")
+    conn = connect_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT id FROM USERS WHERE email=? AND id<>?", (email, user["id"]))
+    if c.fetchone():
+        conn.close()
+        raise HTTPException(status_code=400, detail="Email is already in use")
+    c.execute("UPDATE USERS SET name=?, email=?, emergency_contact=? WHERE id=?", (name, email, emergency_contact, user["id"]))
+    conn.commit()
+    conn.close()
+    return {"name": name, "email": email, "emergency_contact": emergency_contact}
+
+
+@app.get("/profile/me")
+def get_profile(authorization: Optional[str] = Header(None)):
+    user = require_user(authorization)
+    return {"name": user["name"], "email": user["email"], "emergency_contact": user["emergency_contact"]}
+
+
 @app.post("/checkin")
 def checkin(req: CheckinRequest, authorization: Optional[str] = Header(None)):
-    """Score and persist a completed mood check-in.
-
-    The existing questionnaire contains 12 questions: 1-4 depression,
-    5-8 anxiety and 9-12 stress. Each answer is 0-4.  We also normalize
-    the complete response to a 0-10 wellbeing score where higher is better.
-    The normalized score is what the longitudinal analytics graph uses.
-    """
     user = require_user(authorization)
 
     depression = 0
@@ -650,8 +692,6 @@ def checkin(req: CheckinRequest, authorization: Optional[str] = Header(None)):
     if scores[dominant] == 0:
         dominant = "normal"
 
-    # 0 = highest symptom burden, 48 = maximum burden for 12 questions.
-    # Convert that to an intuitive wellbeing score: 10 = best, 0 = worst.
     answered_count = max(1, len(req.answers))
     maximum_possible = answered_count * 4
     raw_total = depression + anxiety + stress
@@ -719,7 +759,7 @@ def checkin(req: CheckinRequest, authorization: Optional[str] = Header(None)):
 # =====================================================================
 try:
     from mood_analytics import analyze_mood_history
-except ImportError:  # supports `uvicorn FastAPI.app:app` from repo root
+except ImportError:
     from FastAPI.mood_analytics import analyze_mood_history
 
 
@@ -729,11 +769,6 @@ def get_mood_analytics(
     authorization: Optional[str] = Header(None),
     x_timezone_offset_minutes: int = Header(0, ge=-840, le=840),
 ):
-    """Return timestamped mood points, trend state and intervention tier.
-
-    Supported rolling windows are 7, 30 and 90 days. The authenticated
-    user's data is always isolated by user_id.
-    """
     user = require_user(authorization)
     if days not in (7, 30, 90):
         raise HTTPException(
@@ -872,9 +907,6 @@ def api_fetch_selected_theme(authorization: Optional[str] = Header(None)):
 
 @app.post("/themes/clear")
 def api_clear_selected_theme(authorization: Optional[str] = Header(None)):
-    """Clears the user's selected theme. Used on logout so a returning user
-    doesn't automatically get the previously selected theme until they
-    re-do the check-in."""
     user = require_user(authorization)
     conn = connect_db_connection()
     c = conn.cursor()
@@ -884,139 +916,69 @@ def api_clear_selected_theme(authorization: Optional[str] = Header(None)):
     return {"response": "Theme cleared"}
 
 
-
 # =====================================================================
-# FEATURE 2 — Somatic 5-4-3-2-1 Grounding Interface
+# BEST POSSIBLE SELF — private, cross-device visions
 # =====================================================================
-
-# ---- 1. Start a new grounding session ----------------------------------
-# POST /startGroundingSession
-# Body: { "user_id": "u1" }
-@app.post("/startGroundingSession")
-def start_grounding_session(
-    req: StartSessionRequest,
-    authorization: Optional[str] = Header(None),
-):
-    user = require_user(authorization)
-    session_id = uuid.uuid4().hex
-    conn = connect_db_connection()
-    c = conn.cursor()
-    c.execute(
-        "INSERT INTO GROUNDING_SESSIONS VALUES (?, ?, ?, 0)",
-        (session_id, user["id"], now()),
-    )
-    conn.commit()
-    conn.close()
-
-    return {"response": "Session started", "session_id": session_id}
-
-
-# ---- 2. Submit items for one step (sight/touch/hear/smell/taste) -------
-# POST /addGroundingEntries
-# Body: { "session_id": "...", "category": "sight", "items": ["tree","sky","lamp","chair","phone"] }
-# category must be one of: sight, touch, hear, smell, taste
-@app.post("/addGroundingEntries")
-def add_grounding_entries(
-    req: AddEntriesRequest,
-    authorization: Optional[str] = Header(None),
-):
+@app.get("/best-self/visions")
+def get_best_self_visions(authorization: Optional[str] = Header(None)):
     user = require_user(authorization)
     conn = connect_db_connection()
     c = conn.cursor()
     c.execute(
-        "SELECT id FROM GROUNDING_SESSIONS WHERE id=? AND user_id=?",
-        (req.session_id, user["id"]),
-    )
-    if c.fetchone() is None:
-        conn.close()
-        raise HTTPException(status_code=404, detail="Grounding session not found")
-    if req.category not in {"sight", "touch", "hear", "smell", "taste"}:
-        conn.close()
-        raise HTTPException(status_code=400, detail="Invalid grounding category")
-    expected_count = {"sight": 5, "touch": 4, "hear": 3, "smell": 2, "taste": 1}[req.category]
-    items = [item.strip() for item in req.items if item.strip()]
-    if len(items) != expected_count:
-        conn.close()
-        raise HTTPException(
-            status_code=400,
-            detail=f"{req.category} requires exactly {expected_count} entries",
-        )
-    for item_text in items:
-        c.execute(
-            "INSERT INTO GROUNDING_ENTRIES VALUES (?, ?, ?, ?)",
-            (uuid.uuid4().hex, req.session_id, req.category, item_text),
-        )
-
-    # mark session completed once taste (the last step) is submitted
-    if req.category == "taste":
-        c.execute("UPDATE GROUNDING_SESSIONS SET completed=1 WHERE id=?", (req.session_id,))
-
-    conn.commit()
-    conn.close()
-
-    return {"response": f"{req.category} entries saved"}
-
-
-# ---- 3. Get a full session with all its entries -------------------------
-# GET /getGroundingSession/<session_id>
-@app.get("/getGroundingSession/{session_id}")
-def get_grounding_session(
-    session_id: str,
-    authorization: Optional[str] = Header(None),
-):
-    user = require_user(authorization)
-    conn = connect_db_connection()
-    c = conn.cursor()
-    c.execute(
-        "SELECT * FROM GROUNDING_SESSIONS WHERE id=? AND user_id=?",
-        (session_id, user["id"]),
-    )
-    session_row = c.fetchone()
-
-    if session_row is None:
-        conn.close()
-        raise HTTPException(status_code=404, detail="Session not found")
-
-    c.execute("SELECT category, item_text FROM GROUNDING_ENTRIES WHERE session_id=?", (session_id,))
-    entry_rows = c.fetchall()
-    conn.close()
-
-    entries_by_category = {}
-    for category, item_text in entry_rows:
-        entries_by_category.setdefault(category, []).append(item_text)
-
-    return {
-        "session_id": session_row[0],
-        "user_id": session_row[1],
-        "created_at": session_row[2],
-        "completed": bool(session_row[3]),
-        "entries": entries_by_category,
-    }
-
-
-# ---- 4. Get a user's past grounding sessions -----------------------------
-# GET /getGroundingHistory/<user_id>
-@app.get("/getGroundingHistory/{user_id}")
-def get_grounding_history(
-    user_id: str,
-    authorization: Optional[str] = Header(None),
-):
-    user = require_user(authorization)
-    if user_id != user["id"]:
-        raise HTTPException(status_code=403, detail="You can only view your own history")
-    conn = connect_db_connection()
-    c = conn.cursor()
-    c.execute(
-        "SELECT id, created_at, completed FROM GROUNDING_SESSIONS WHERE user_id=? ORDER BY created_at DESC",
-        (user_id,),
+        """SELECT id, timeline, vision, created_at FROM BEST_SELF_VISIONS
+           WHERE user_id=? ORDER BY created_at DESC""",
+        (user["id"],),
     )
     rows = c.fetchall()
     conn.close()
-
     return [
-        {"session_id": r[0], "created_at": r[1], "completed": bool(r[2])}
-        for r in rows
+        {"id": row[0], "timeline": row[1], "vision": row[2], "created_at": row[3]}
+        for row in rows
     ]
+
+
+@app.post("/best-self/visions")
+def save_best_self_vision(
+    req: SaveBestSelfVisionRequest,
+    authorization: Optional[str] = Header(None),
+):
+    user = require_user(authorization)
+    vision = req.vision.strip()
+    if not vision:
+        raise HTTPException(status_code=400, detail="Vision cannot be empty")
+    if req.timeline not in {1, 2, 3, 5}:
+        raise HTTPException(status_code=400, detail="Timeline must be 1, 2, 3, or 5 years")
+
+    conn = connect_db_connection()
+    c = conn.cursor()
+    c.execute(
+        """INSERT INTO BEST_SELF_VISIONS (id, user_id, timeline, vision, created_at)
+           VALUES (?, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE
+             timeline=VALUES(timeline), vision=VALUES(vision), created_at=VALUES(created_at)""",
+        (req.id, user["id"], req.timeline, vision, req.created_at),
+    )
+    conn.commit()
+    conn.close()
+    return {"id": req.id, "timeline": req.timeline, "vision": vision, "created_at": req.created_at}
+
+
+@app.delete("/best-self/visions/{vision_id}")
+def delete_best_self_vision(
+    vision_id: str,
+    authorization: Optional[str] = Header(None),
+):
+    """Delete a Best Possible Self vision entry."""
+    user = require_user(authorization)
+    conn = connect_db_connection()
+    c = conn.cursor()
+    c.execute(
+        "DELETE FROM BEST_SELF_VISIONS WHERE id=? AND user_id=?",
+        (vision_id, user["id"]),
+    )
+    conn.commit()
+    conn.close()
+    return {"success": True}
 
 
 # =====================================================================
@@ -1028,14 +990,13 @@ def save_sleep_log(
     req: SaveSleepLogRequest,
     authorization: Optional[str] = Header(None)
 ):
-    """Save a sleep log entry for the authenticated user."""
     user = require_user(authorization)
     user_id = user["id"]
-    
+
     sleep_id = str(uuid.uuid4())
     conn = connect_db_connection()
     c = conn.cursor()
-    
+
     c.execute(
         """INSERT INTO SLEEP_LOGS 
         (id, user_id, date, sleep_hours, sleep_minutes, quality, post_wake_feeling, notes, created_at)
@@ -1052,13 +1013,12 @@ def save_sleep_log(
             now(),
         ),
     )
-    
+
     conn.commit()
     conn.close()
-    
-    # Check for warnings after saving
+
     _check_wellbeing_warnings(user_id)
-    
+
     return {
         "id": sleep_id,
         "user_id": user_id,
@@ -1077,21 +1037,19 @@ def get_sleep_logs(
     days: int = 7,
     authorization: Optional[str] = Header(None)
 ):
-    """Get sleep logs for the authenticated user from the last N days."""
     user = require_user(authorization)
     user_id = user["id"]
-    
+
     conn = connect_db_connection()
     c = conn.cursor()
-    
-    # Get logs from last N days
-    cutoff_date = (datetime.utcnow() - __import__('datetime').timedelta(days=days)).isoformat()
+
+    cutoff_date = (datetime.utcnow() - timedelta(days=days)).isoformat()
     c.execute(
         """SELECT id, user_id, date, sleep_hours, sleep_minutes, quality, post_wake_feeling, notes, created_at
         FROM SLEEP_LOGS WHERE user_id=? AND created_at >= ? ORDER BY date DESC""",
         (user_id, cutoff_date),
     )
-    
+
     logs = []
     for row in c.fetchall():
         logs.append({
@@ -1105,7 +1063,7 @@ def get_sleep_logs(
             "notes": row[7],
             "created_at": row[8],
         })
-    
+
     conn.close()
     return logs
 
@@ -1115,33 +1073,32 @@ def get_sleep_metrics(
     days: int = 7,
     authorization: Optional[str] = Header(None)
 ):
-    """Get aggregated sleep metrics for the last N days."""
     user = require_user(authorization)
     user_id = user["id"]
-    
+
     conn = connect_db_connection()
     c = conn.cursor()
-    
-    cutoff_date = (datetime.utcnow() - __import__('datetime').timedelta(days=days)).isoformat()
+
+    cutoff_date = (datetime.utcnow() - timedelta(days=days)).isoformat()
     c.execute(
         """SELECT id, user_id, date, sleep_hours, sleep_minutes, quality,
         post_wake_feeling, notes, created_at FROM SLEEP_LOGS
         WHERE user_id=? AND created_at >= ? ORDER BY date ASC""",
         (user_id, cutoff_date),
     )
-    
+
     entries = []
     total_sleep_minutes = 0
     total_quality = 0
     count = 0
-    
+
     for row in c.fetchall():
         (log_id, log_user_id, date, sleep_hours, sleep_minutes, quality,
          post_wake_feeling, notes, created_at) = row
         total_sleep_minutes += sleep_hours * 60 + sleep_minutes
         total_quality += quality
         count += 1
-        
+
         entries.append({
             "id": log_id,
             "user_id": log_user_id,
@@ -1153,12 +1110,12 @@ def get_sleep_metrics(
             "notes": notes,
             "created_at": created_at,
         })
-    
+
     conn.close()
-    
+
     avg_sleep = total_sleep_minutes / 60 / max(count, 1)
     avg_quality = total_quality / max(count, 1)
-    
+
     return {
         "average_sleep": round(avg_sleep, 2),
         "average_quality": round(avg_quality, 2),
@@ -1206,59 +1163,26 @@ def get_sleep_mood_correlation(
         WHERE user_id=? AND created_at >= ? ORDER BY created_at""",
         (user_id, cutoff_date),
     )
-    mood_rows = c.fetchall()
-
-    local_today = datetime.strptime(
-        _local_date_for_offset(x_timezone_offset_minutes), "%Y-%m-%d"
-    )
-    task_cutoff = (local_today - timedelta(days=days - 1)).strftime("%Y-%m-%d")
-    c.execute(
-        """SELECT t.task_date, t.status, a.title
-           FROM BEHAVIORAL_DAILY_TASKS t
-           JOIN BEHAVIORAL_ACTIVITIES a ON a.id = t.activity_id
-           WHERE t.user_id = ? AND t.task_date >= ?""",
-        (user_id, task_cutoff),
-    )
-    behavioral_by_date = {
-        row[0]: {"status": row[1], "title": row[2]} for row in c.fetchall()
-    }
 
     correlations = []
-    for row in mood_rows:
-        created_at, stored_mood_score, answers_json = row
-        date_key = _local_date_from_iso(created_at, x_timezone_offset_minutes)
-        if date_key not in sleep_data:
-            continue
+    for row in c.fetchall():
+        created_at, answers_json = row
+        date_key = created_at.split('T')[0]
 
         try:
-            mood_score = (
-                float(stored_mood_score)
-                if stored_mood_score is not None
-                else None
-            )
-            if mood_score is None:
-                answers = json.loads(answers_json)
-                if not answers:
-                    continue
+            answers = json.loads(answers_json)
+            if answers:
                 avg_answer = sum(answers.values()) / len(answers)
                 mood_score = avg_answer * 2.5
 
-            behavioral = behavioral_by_date.get(date_key)
-            correlations.append(
-                {
+                sleep_hours = sleep_data.get(date_key, 0)
+                correlations.append({
                     "date": date_key,
                     "sleep_hours": sleep_data[date_key],
                     "mood_score": round(mood_score, 1),
-                    "behavioral_status": (
-                        behavioral["status"] if behavioral else None
-                    ),
-                    "behavioral_activity_title": (
-                        behavioral["title"] if behavioral else None
-                    ),
-                }
-            )
-        except (TypeError, ValueError, json.JSONDecodeError):
-            continue
+                })
+        except:
+            pass
 
     conn.close()
     return correlations
@@ -1268,19 +1192,18 @@ def get_sleep_mood_correlation(
 def get_wellbeing_warnings(
     authorization: Optional[str] = Header(None)
 ):
-    """Get active wellbeing warnings for the user."""
     user = require_user(authorization)
     user_id = user["id"]
-    
+
     conn = connect_db_connection()
     c = conn.cursor()
-    
+
     c.execute(
         """SELECT id, title, message, created_at, is_dismissed FROM WELLBEING_WARNINGS
         WHERE user_id=? AND is_dismissed=0 ORDER BY created_at DESC""",
         (user_id,),
     )
-    
+
     warnings = []
     for row in c.fetchall():
         warnings.append({
@@ -1290,7 +1213,7 @@ def get_wellbeing_warnings(
             "created_at": row[3],
             "is_dismissed": bool(row[4]),
         })
-    
+
     conn.close()
     return warnings
 
@@ -1300,21 +1223,20 @@ def dismiss_warning(
     warning_id: str,
     authorization: Optional[str] = Header(None)
 ):
-    """Dismiss a wellbeing warning."""
     user = require_user(authorization)
     user_id = user["id"]
-    
+
     conn = connect_db_connection()
     c = conn.cursor()
-    
+
     c.execute(
         "UPDATE WELLBEING_WARNINGS SET is_dismissed=1 WHERE id=? AND user_id=?",
         (warning_id, user_id),
     )
-    
+
     conn.commit()
     conn.close()
-    
+
     return {"success": True}
 
 
@@ -1323,46 +1245,38 @@ def delete_sleep_log(
     log_id: str,
     authorization: Optional[str] = Header(None)
 ):
-    """Delete a sleep log entry."""
     user = require_user(authorization)
     user_id = user["id"]
-    
+
     conn = connect_db_connection()
     c = conn.cursor()
-    
+
     c.execute(
         "DELETE FROM SLEEP_LOGS WHERE id=? AND user_id=?",
         (log_id, user_id),
     )
-    
+
     conn.commit()
     conn.close()
-    
+
     return {"success": True}
 
 
 def _check_wellbeing_warnings(user_id: str):
-    """Check sleep-mood correlation and create warnings if needed."""
     conn = connect_db_connection()
     c = conn.cursor()
-    
-    # Get last 7 days of sleep data
-    cutoff_date = (datetime.utcnow() - __import__('datetime').timedelta(days=7)).isoformat()
+
+    cutoff_date = (datetime.utcnow() - timedelta(days=7)).isoformat()
     c.execute(
         """SELECT AVG(sleep_hours * 60 + sleep_minutes) as avg_sleep_minutes
         FROM SLEEP_LOGS WHERE user_id=? AND created_at >= ?""",
         (user_id, cutoff_date),
     )
-    
+
     result = c.fetchone()
     avg_sleep_minutes = result[0] if result[0] else 0
     avg_sleep_hours = avg_sleep_minutes / 60
-    
-    # Get last 7 days of mood data. `answers` is stored as a JSON string
-    # (e.g. '{"0": 4, "1": 3}'), so it must be parsed in Python rather than
-    # cast directly in SQL — CAST(answers AS REAL) on a JSON string always
-    # evaluates to 0, which made avg_mood < 5 trivially true and meant
-    # warnings were really only checking sleep, never actual mood decline.
+
     c.execute(
         """SELECT answers FROM MOOD_CHECKINS
         WHERE user_id=? AND created_at >= ?""",
@@ -1375,17 +1289,13 @@ def _check_wellbeing_warnings(user_id: str):
             answers = json.loads(answers_json)
             if answers:
                 avg_answer = sum(answers.values()) / len(answers)
-                mood_scores.append(avg_answer * 2.5)  # scale to 0-10, same as /sleep/correlation
+                mood_scores.append(avg_answer * 2.5)
         except Exception:
             pass
 
     avg_mood = sum(mood_scores) / len(mood_scores) if mood_scores else None
 
-    # Check conditions for warnings. Require actual mood data to exist —
-    # otherwise there's nothing to correlate sleep against yet.
     if avg_mood is not None and avg_sleep_hours < 6 and avg_mood < 5:
-        # Avoid spamming duplicate warnings: only create one if the user
-        # doesn't already have an active (undismissed) alert of this kind.
         c.execute(
             """SELECT id FROM WELLBEING_WARNINGS
             WHERE user_id=? AND title=? AND is_dismissed=0""",
@@ -1421,7 +1331,6 @@ def save_breathing_session(
     req: SaveBreathingSessionRequest,
     authorization: Optional[str] = Header(None)
 ):
-    """Save a completed or stopped breathing exercise session for the authenticated user."""
     user = require_user(authorization)
     user_id = user["id"]
     session_id = str(uuid.uuid4())
@@ -1464,7 +1373,6 @@ def get_breathing_history(
     limit: int = 30,
     authorization: Optional[str] = Header(None)
 ):
-    """Get breathing exercise history for the authenticated user."""
     user = require_user(authorization)
     user_id = user["id"]
 
@@ -1499,14 +1407,12 @@ def get_breathing_history(
 def get_breathing_metrics(
     authorization: Optional[str] = Header(None)
 ):
-    """Get aggregated breathing exercise metrics for the authenticated user."""
     user = require_user(authorization)
     user_id = user["id"]
 
     conn = connect_db_connection()
     c = conn.cursor()
 
-    # Total sessions, total seconds, total cycles
     c.execute(
         """SELECT COUNT(*), COALESCE(SUM(duration_seconds), 0), COALESCE(SUM(cycles_completed), 0)
         FROM BREATHING_SESSIONS WHERE user_id=?""",
@@ -1514,7 +1420,6 @@ def get_breathing_metrics(
     )
     total_sessions, total_seconds, total_cycles = c.fetchone()
 
-    # Today's minutes
     today_start = datetime.utcnow().strftime("%Y-%m-%d") + "T00:00:00"
     c.execute(
         """SELECT COALESCE(SUM(duration_seconds), 0)
@@ -1523,7 +1428,6 @@ def get_breathing_metrics(
     )
     today_seconds = c.fetchone()[0]
 
-    # Most frequent technique
     c.execute(
         """SELECT technique, COUNT(*) as count
         FROM BREATHING_SESSIONS WHERE user_id=?
@@ -1533,7 +1437,6 @@ def get_breathing_metrics(
     tech_row = c.fetchone()
     favorite_technique = tech_row[0] if tech_row else "Box Breathing"
 
-    # Most frequent sound
     c.execute(
         """SELECT background_sound, COUNT(*) as count
         FROM BREATHING_SESSIONS WHERE user_id=? AND background_sound IS NOT NULL
@@ -1561,7 +1464,6 @@ def delete_breathing_session(
     session_id: str,
     authorization: Optional[str] = Header(None)
 ):
-    """Delete a breathing session entry."""
     user = require_user(authorization)
     user_id = user["id"]
 
@@ -1575,26 +1477,11 @@ def delete_breathing_session(
     conn.close()
 
     return {"success": True}
-    return {"success": True}
+
 
 # =====================================================================
 # MODULE 1 — ZERO-KNOWLEDGE ANONYMOUS COMMUNITY FORUM
 # =====================================================================
-
-class CommunityPostRequest(BaseModel):
-    content: str
-
-
-class CommunityReportRequest(BaseModel):
-    reason: Optional[str] = "Harmful or triggering content"
-
-class CommunityCommentRequest(BaseModel):
-    content: str
-
-
-class CommunityCommentReportRequest(BaseModel):
-    reason: Optional[str] = "Harmful or inappropriate comment"
-
 
 _COMMUNITY_ADJECTIVES = (
     "Quiet", "Gentle", "Calm", "Kind", "Brave", "Hopeful",
@@ -1607,7 +1494,6 @@ _COMMUNITY_NOUNS = (
 
 
 def _community_alias(user_id: str) -> str:
-    """Generate a deterministic pseudonym without exposing user PII."""
     digest = hashlib.sha256(user_id.encode("utf-8")).digest()
     adjective = _COMMUNITY_ADJECTIVES[digest[0] % len(_COMMUNITY_ADJECTIVES)]
     noun = _COMMUNITY_NOUNS[digest[1] % len(_COMMUNITY_NOUNS)]
@@ -1616,7 +1502,6 @@ def _community_alias(user_id: str) -> str:
 
 
 def _scrub_community_pii(text: str) -> str:
-    """Remove common contact PII before public storage/rendering."""
     value = " ".join(text.strip().split())
     value = re.sub(
         r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",
@@ -1736,7 +1621,6 @@ def report_community_post(
     req: CommunityReportRequest,
     authorization: Optional[str] = Header(None),
 ):
-    """Module 1 records reports only; later modules handle AI/quarantine."""
     user = require_user(authorization)
     reason = _scrub_community_pii(req.reason or "")[:200] or "Community report"
 
@@ -1776,6 +1660,7 @@ def report_community_post(
         "already_reported": False,
         "message": "Report received for review.",
     }
+
 
 @app.get("/community/posts/{post_id}/comments")
 def get_community_comments(
@@ -1904,6 +1789,145 @@ def report_community_comment(
 
 
 # =====================================================================
+# JOURNAL & NOTES ENDPOINTS
+# =====================================================================
+
+@app.get("/journal/entries")
+def get_journal_entries(
+    limit: int = 100,
+    authorization: Optional[str] = Header(None),
+):
+    """Fetch journal/thought entries for authenticated user ordered by created_at DESC."""
+    user = require_user(authorization)
+    limit = max(1, min(200, limit))
+
+    conn = connect_db_connection()
+    c = conn.cursor()
+    c.execute(
+        """SELECT id, user_id, title, content, mood_tag, created_at, updated_at
+           FROM JOURNAL_ENTRIES
+           WHERE user_id=?
+           ORDER BY created_at DESC
+           LIMIT ?""",
+        (user["id"], limit),
+    )
+    rows = c.fetchall()
+    conn.close()
+
+    return [
+        {
+            "id": r[0],
+            "user_id": r[1],
+            "title": r[2] or "",
+            "content": r[3],
+            "mood_tag": r[4] or "",
+            "created_at": r[5],
+            "updated_at": r[6],
+        }
+        for r in rows
+    ]
+
+
+@app.post("/journal/entries")
+def create_journal_entry(
+    req: SaveJournalEntryRequest,
+    authorization: Optional[str] = Header(None),
+):
+    """Create a new journal / note / thought entry for the user."""
+    user = require_user(authorization)
+    content = req.content.strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="Content cannot be empty")
+
+    entry_id = uuid.uuid4().hex
+    created_at = now()
+    title = (req.title or "").strip()
+    mood_tag = (req.mood_tag or "").strip()
+
+    conn = connect_db_connection()
+    c = conn.cursor()
+    c.execute(
+        """INSERT INTO JOURNAL_ENTRIES
+           (id, user_id, title, content, mood_tag, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (entry_id, user["id"], title, content, mood_tag, created_at, None),
+    )
+    conn.commit()
+    conn.close()
+
+    return {
+        "id": entry_id,
+        "user_id": user["id"],
+        "title": title,
+        "content": content,
+        "mood_tag": mood_tag,
+        "created_at": created_at,
+        "updated_at": None,
+    }
+
+
+@app.put("/journal/entries/{entry_id}")
+def update_journal_entry(
+    entry_id: str,
+    req: UpdateJournalEntryRequest,
+    authorization: Optional[str] = Header(None),
+):
+    """Update an existing journal entry."""
+    user = require_user(authorization)
+    content = req.content.strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="Content cannot be empty")
+
+    title = (req.title or "").strip()
+    mood_tag = (req.mood_tag or "").strip()
+    updated_at = now()
+
+    conn = connect_db_connection()
+    c = conn.cursor()
+    c.execute(
+        "SELECT id FROM JOURNAL_ENTRIES WHERE id=? AND user_id=?",
+        (entry_id, user["id"]),
+    )
+    if c.fetchone() is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Journal entry not found")
+
+    c.execute(
+        """UPDATE JOURNAL_ENTRIES
+           SET title=?, content=?, mood_tag=?, updated_at=?
+           WHERE id=? AND user_id=?""",
+        (title, content, mood_tag, updated_at, entry_id, user["id"]),
+    )
+    conn.commit()
+    conn.close()
+
+    return {
+        "id": entry_id,
+        "user_id": user["id"],
+        "title": title,
+        "content": content,
+        "mood_tag": mood_tag,
+        "updated_at": updated_at,
+    }
+
+
+@app.delete("/journal/entries/{entry_id}")
+def delete_journal_entry(
+    entry_id: str,
+    authorization: Optional[str] = Header(None),
+):
+    """Delete a journal entry."""
+    user = require_user(authorization)
+    conn = connect_db_connection()
+    c = conn.cursor()
+    c.execute(
+        "DELETE FROM JOURNAL_ENTRIES WHERE id=? AND user_id=?",
+        (entry_id, user["id"]),
+    )
+    conn.commit()
+    conn.close()
+
+    return {"success": True}
 # FEATURE: Behavioral Activation Planner — Depression / Wellbeing Module
 # =====================================================================
 

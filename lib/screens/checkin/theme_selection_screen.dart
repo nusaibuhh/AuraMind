@@ -25,7 +25,7 @@ class _ThemeSelectionScreenState extends State<ThemeSelectionScreen> {
 
     try {
       final api = context.read<AuthProvider>().api;
-      await context.read<AppThemeProvider>().selectPalette(_selected!, api);
+      await context.read<AppThemeProvider>().selectPalette(_selected!, api, wellbeingCategory: context.read<QuestionnaireProvider>().result!.dominantCategory);
 
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
