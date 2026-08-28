@@ -102,16 +102,41 @@ def connect_db_connection():
 
 def _ensure_column(cursor, table: str, column: str, column_type: str):
     """Add a column to an existing MySQL table without losing data."""
-    cursor.execute(
-        """SELECT COLUMN_NAME FROM information_schema.columns
-           WHERE table_schema = DATABASE() AND LOWER(table_name) = %s""",
-        (table.lower(),),
-    )
-    columns = {row[0] for row in cursor.fetchall()}
-    if column not in columns:
+    try:
         cursor.execute(
-            f"ALTER TABLE {table} ADD COLUMN {column} {column_type}"
+            """SELECT COLUMN_NAME FROM information_schema.columns
+               WHERE table_schema = DATABASE() AND LOWER(table_name) = %s""",
+            (table.lower(),),
         )
+        columns = {row[0] for row in cursor.fetchall()}
+        if column not in columns:
+            cursor.execute(
+                f"ALTER TABLE {table} ADD COLUMN {column} {column_type}"
+            )
+    except Exception:
+        pass
+
+
+def _ensure_index(cursor, table: str, index_name: str, columns_str: str):
+    """Create an index on an existing MySQL table if it does not already exist."""
+    try:
+        cursor.execute(
+            """SELECT INDEX_NAME FROM information_schema.statistics
+               WHERE table_schema = DATABASE() AND LOWER(table_name) = %s AND LOWER(index_name) = %s""",
+            (table.lower(), index_name.lower()),
+        )
+        rows = cursor.fetchall()
+        if not rows:
+            cursor.execute(
+                f"CREATE INDEX {index_name} ON {table} ({columns_str})"
+            )
+    except Exception:
+        try:
+            cursor.execute(
+                f"CREATE INDEX IF NOT EXISTS {index_name} ON {table} ({columns_str})"
+            )
+        except Exception:
+            pass
 
 
 def connect_db():
@@ -1156,6 +1181,18 @@ def get_sleep_mood_correlation(
         date_key = recorded_date.split("T")[0]
         sleep_data[date_key] = (hours * 60 + minutes) / 60
 
+    # Fetch behavioral tasks for this user in the same range
+    c.execute(
+        """SELECT t.task_date, t.status, a.title
+           FROM BEHAVIORAL_DAILY_TASKS t
+           JOIN BEHAVIORAL_ACTIVITIES a ON t.activity_id = a.id
+           WHERE t.user_id = ? AND t.task_date >= ?""",
+        (user_id, cutoff_date.split("T")[0]),
+    )
+    behavioral_by_date = {
+        row[0]: {"status": row[1], "title": row[2]} for row in c.fetchall()
+    }
+
     # Mood scores use the same normalized 0-10 value as Mood Insights. Older
     # rows without that column populated retain the existing answer fallback.
     c.execute(
@@ -1166,23 +1203,31 @@ def get_sleep_mood_correlation(
 
     correlations = []
     for row in c.fetchall():
-        created_at, answers_json = row
+        created_at, mood_score_db, answers_json = row
         date_key = created_at.split('T')[0]
 
-        try:
-            answers = json.loads(answers_json)
-            if answers:
-                avg_answer = sum(answers.values()) / len(answers)
-                mood_score = avg_answer * 2.5
+        final_mood_score = None
+        if mood_score_db is not None:
+            final_mood_score = float(mood_score_db)
+        else:
+            try:
+                answers = json.loads(answers_json) if answers_json else {}
+                if answers:
+                    avg_answer = sum(answers.values()) / len(answers)
+                    final_mood_score = avg_answer * 2.5
+            except Exception:
+                pass
 
-                sleep_hours = sleep_data.get(date_key, 0)
-                correlations.append({
-                    "date": date_key,
-                    "sleep_hours": sleep_data[date_key],
-                    "mood_score": round(mood_score, 1),
-                })
-        except:
-            pass
+        if final_mood_score is not None:
+            point = {
+                "date": date_key,
+                "sleep_hours": sleep_data.get(date_key, 0),
+                "mood_score": round(final_mood_score, 1),
+            }
+            if date_key in behavioral_by_date:
+                point["behavioral_status"] = behavioral_by_date[date_key]["status"]
+                point["behavioral_activity_title"] = behavioral_by_date[date_key]["title"]
+            correlations.append(point)
 
     conn.close()
     return correlations
@@ -2116,6 +2161,9 @@ def get_today_behavioral_task(
 
     # Need to assign a new task
     activity = _select_activity_for_user(c, user_id, today_str=today_str)
+    if not activity:
+        seed_behavioral_activities(conn)
+        activity = _select_activity_for_user(c, user_id, today_str=today_str)
     if not activity:
         conn.close()
         raise HTTPException(status_code=404, detail="No behavioral activities found.")

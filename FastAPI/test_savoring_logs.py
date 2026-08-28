@@ -63,7 +63,8 @@ def setup_test_db(monkeypatch):
             name TEXT,
             email VARCHAR(255) UNIQUE,
             password TEXT,
-            token TEXT
+            token TEXT,
+            emergency_contact TEXT
         );
         CREATE TABLE SAVORING_LOGS (
             id VARCHAR(64) PRIMARY KEY,

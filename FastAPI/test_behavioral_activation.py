@@ -64,7 +64,8 @@ def setup_test_db(monkeypatch):
         name TEXT,
         email VARCHAR(255) UNIQUE,
         password TEXT,
-        token TEXT
+        token TEXT,
+        emergency_contact TEXT
     )""")
     c.execute("""CREATE TABLE BEHAVIORAL_ACTIVITIES (
         id VARCHAR(64) PRIMARY KEY,
