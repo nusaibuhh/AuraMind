@@ -8,6 +8,8 @@ import '../models/question.dart';
 import '../models/community_comment.dart';
 import '../models/community_post.dart';
 import '../models/mood_analytics.dart';
+import '../models/best_self_vision.dart';
+import '../models/journal_entry.dart';
 import '../models/theme_palette.dart';
 import '../utils/scoring.dart';
 
@@ -150,42 +152,6 @@ class ApiService {
     await _handleResponse(response);
   }
 
-  Future<String> startGroundingSession(String userId) async {
-    final response = await _client.post(
-      Uri.parse('${ApiConfig.baseUrl}/startGroundingSession'),
-      headers: _headers,
-      body: jsonEncode({'user_id': userId}),
-    );
-    final data = await _handleResponse(response) as Map<String, dynamic>;
-    return data['session_id'] as String;
-  }
-
-  Future<void> addGroundingEntries({
-    required String sessionId,
-    required String category,
-    required List<String> items,
-  }) async {
-    final response = await _client.post(
-      Uri.parse('${ApiConfig.baseUrl}/addGroundingEntries'),
-      headers: _headers,
-      body: jsonEncode({
-        'session_id': sessionId,
-        'category': category,
-        'items': items,
-      }),
-    );
-    await _handleResponse(response);
-  }
-
-  Future<Map<String, dynamic>> getGroundingSession(String sessionId) async {
-    final response = await _client.get(
-      Uri.parse('${ApiConfig.baseUrl}/getGroundingSession/$sessionId'),
-      headers: _headers,
-    );
-    final data = await _handleResponse(response);
-    return data as Map<String, dynamic>;
-  }
-
   Future<ThemePalette?> fetchSelectedTheme() async {
     final response = await _client.get(
       Uri.parse('${ApiConfig.baseUrl}/themes/selected/me'),
@@ -195,6 +161,74 @@ class ApiService {
     if (response.statusCode == 404) return null;
     final data = await _handleResponse(response);
     return _paletteFromJson(data);
+  }
+
+  Future<List<BestSelfVision>> getBestSelfVisions() async {
+    final response = await _client.get(
+      Uri.parse('${ApiConfig.baseUrl}/best-self/visions'),
+      headers: _headers,
+    );
+    final data = await _handleResponse(response) as List<dynamic>;
+    return data
+        .map((item) => BestSelfVision.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<void> saveBestSelfVision(BestSelfVision vision) async {
+    final response = await _client.post(
+      Uri.parse('${ApiConfig.baseUrl}/best-self/visions'),
+      headers: _headers,
+      body: jsonEncode({
+        'id': vision.id,
+        'timeline': vision.timeline,
+        'vision': vision.vision,
+        'created_at': vision.createdAt.toIso8601String(),
+      }),
+    );
+    await _handleResponse(response);
+  }
+
+  Future<void> deleteBestSelfVision(String visionId) async {
+    final response = await _client.delete(
+      Uri.parse('${ApiConfig.baseUrl}/best-self/visions/$visionId'),
+      headers: _headers,
+    );
+    await _handleResponse(response);
+  }
+
+  Future<({String name, String email, String? emergencyContact})> updateProfile({
+    required String name,
+    required String email,
+    required String emergencyContact,
+  }) async {
+    final response = await _client.put(
+      Uri.parse('${ApiConfig.baseUrl}/profile/me'),
+      headers: _headers,
+      body: jsonEncode({
+        'name': name,
+        'email': email,
+        'emergency_contact': emergencyContact,
+      }),
+    );
+    final data = await _handleResponse(response) as Map<String, dynamic>;
+    return (
+      name: data['name'] as String,
+      email: data['email'] as String,
+      emergencyContact: data['emergency_contact'] as String?,
+    );
+  }
+
+  Future<({String name, String email, String? emergencyContact})> getProfile() async {
+    final response = await _client.get(
+      Uri.parse('${ApiConfig.baseUrl}/profile/me'),
+      headers: _headers,
+    );
+    final data = await _handleResponse(response) as Map<String, dynamic>;
+    return (
+      name: data['name'] as String,
+      email: data['email'] as String,
+      emergencyContact: data['emergency_contact'] as String?,
+    );
   }
 
   MentalHealthCategory _parseCategory(String value) {
@@ -416,6 +450,65 @@ class ApiService {
   Future<void> deleteBreathingSession(String sessionId) async {
     final response = await _client.delete(
       Uri.parse('${ApiConfig.baseUrl}/breathing/session/$sessionId'),
+      headers: _headers,
+    );
+    await _handleResponse(response);
+  }
+
+  // ===== Journal & Notes Endpoints =====
+
+  Future<List<JournalEntry>> getJournalEntries({int limit = 100}) async {
+    final response = await _client.get(
+      Uri.parse('${ApiConfig.baseUrl}/journal/entries?limit=$limit'),
+      headers: _headers,
+    );
+    final data = await _handleResponse(response);
+    if (data is! List) return [];
+    return data
+        .map((item) => JournalEntry.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<JournalEntry> createJournalEntry({
+    String? title,
+    required String content,
+    String? moodTag,
+  }) async {
+    final response = await _client.post(
+      Uri.parse('${ApiConfig.baseUrl}/journal/entries'),
+      headers: _headers,
+      body: jsonEncode({
+        'title': title,
+        'content': content,
+        'mood_tag': moodTag,
+      }),
+    );
+    final data = await _handleResponse(response);
+    return JournalEntry.fromJson(data as Map<String, dynamic>);
+  }
+
+  Future<JournalEntry> updateJournalEntry({
+    required String id,
+    String? title,
+    required String content,
+    String? moodTag,
+  }) async {
+    final response = await _client.put(
+      Uri.parse('${ApiConfig.baseUrl}/journal/entries/$id'),
+      headers: _headers,
+      body: jsonEncode({
+        'title': title,
+        'content': content,
+        'mood_tag': moodTag,
+      }),
+    );
+    final data = await _handleResponse(response);
+    return JournalEntry.fromJson(data as Map<String, dynamic>);
+  }
+
+  Future<void> deleteJournalEntry(String entryId) async {
+    final response = await _client.delete(
+      Uri.parse('${ApiConfig.baseUrl}/journal/entries/$entryId'),
       headers: _headers,
     );
     await _handleResponse(response);

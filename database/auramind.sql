@@ -376,6 +376,34 @@ LOCK TABLES `wellbeing_warnings` WRITE;
 UNLOCK TABLES;
 
 --
+-- Table structure for table `journal_entries`
+--
+
+DROP TABLE IF EXISTS `journal_entries`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `journal_entries` (
+  `id` varchar(64) NOT NULL,
+  `user_id` varchar(64) NOT NULL,
+  `title` text,
+  `content` text NOT NULL,
+  `mood_tag` text,
+  `created_at` text NOT NULL,
+  `updated_at` text,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `journal_entries`
+--
+
+LOCK TABLES `journal_entries` WRITE;
+/*!40000 ALTER TABLE `journal_entries` DISABLE KEYS */;
+/*!40000 ALTER TABLE `journal_entries` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
 -- Dumping routines for database 'auramind'
 --
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;

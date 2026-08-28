@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 
 import '../models/theme_palette.dart';
+import '../models/question.dart';
 
 import '../services/api_service.dart';
 
@@ -15,6 +16,7 @@ class AppThemeProvider extends ChangeNotifier {
   bool _hasCompletedCheckIn = false;
 
   bool _isLoading = false;
+  MentalHealthCategory _wellbeingCategory = MentalHealthCategory.normal;
 
 
 
@@ -23,6 +25,7 @@ class AppThemeProvider extends ChangeNotifier {
   bool get hasCompletedCheckIn => _hasCompletedCheckIn;
 
   bool get isLoading => _isLoading;
+  MentalHealthCategory get wellbeingCategory => _wellbeingCategory;
 
 
 
@@ -66,13 +69,14 @@ class AppThemeProvider extends ChangeNotifier {
 
 
 
-  Future<void> selectPalette(ThemePalette palette, ApiService api) async {
+  Future<void> selectPalette(ThemePalette palette, ApiService api, {MentalHealthCategory? wellbeingCategory}) async {
 
     await api.selectTheme(palette.id);
 
     _palette = palette;
 
     _hasCompletedCheckIn = true;
+    _wellbeingCategory = wellbeingCategory ?? palette.category;
 
     notifyListeners();
 
@@ -97,6 +101,7 @@ class AppThemeProvider extends ChangeNotifier {
     // Reset completion flag and restore default palette
     _hasCompletedCheckIn = false;
     _palette = allThemePalettes[6];
+    _wellbeingCategory = MentalHealthCategory.normal;
     notifyListeners();
 
   }
