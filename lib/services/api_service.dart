@@ -526,6 +526,8 @@ class ApiService {
       headers: _headers,
     );
     await _handleResponse(response);
+  }
+
   // ===== Behavioral Activation Endpoints =====
 
   Future<Map<String, dynamic>> getTodayBehavioralTask() async {
