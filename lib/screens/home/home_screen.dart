@@ -19,6 +19,9 @@ import '../best_self/best_self_canvas_screen.dart';
 import '../exercises/exercises_screen.dart';
 import '../journal/journal_screen.dart';
 import '../profile/profile_screen.dart';
+import '../behavioral_activation/behavioral_activation_screen.dart';
+import '../savoring/savoring_log_screen.dart';
+import 'mood_analytics_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -118,6 +121,29 @@ class _HomeScreenState extends State<HomeScreen> {
                       const SizedBox(height: 18),
                       _ReminderCard(accent: theme.colorScheme.primary, text: "It's okay to take a break. You are still doing your best."),
                       const SizedBox(height: 18),
+                      _BehavioralActivationCard(
+                        accent: theme.colorScheme.primary,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  const BehavioralActivationScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 18),
+                      _SavoringLogCard(
+                        accent: theme.colorScheme.primary,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const SavoringLogScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 18),
                       _CommunityForumCard(
                         accent: theme.colorScheme.primary,
                         onTap: () {
@@ -146,6 +172,49 @@ class _HomeScreenState extends State<HomeScreen> {
                       Row(
                         children: [
                           for (var i = 0; i < recommended.length; i++) ...[Expanded(child: _RecommendationTile(background: recommended[i].color.withValues(alpha: .17), icon: recommended[i].icon, iconColor: recommended[i].color, title: recommended[i].title, subtitle: recommended[i].subtitle, onTap: recommended[i].onTap)), if (i < recommended.length - 1) const SizedBox(width: 12)],
+                          Expanded(
+                            child: _RecommendationTile(
+                              background: const Color(0xFFEAF3E8),
+                              icon: Icons.spa_outlined,
+                              iconColor: const Color(0xFF6D8E71),
+                              title: 'Breathing\nExercise',
+                              subtitle: '3 min',
+                              onTap: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => const BreathingScreen(),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: _RecommendationTile(
+                              background: Color(0xFFEAF2FB),
+                              icon: Icons.menu_book_outlined,
+                              iconColor: Color(0xFF5A87B3),
+                              title: 'Journal',
+                              subtitle: 'Write your\nthoughts',
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _RecommendationTile(
+                              background: const Color(0xFFF0EBF8),
+                              icon: Icons.local_florist_outlined,
+                              iconColor: const Color(0xFF8A74B8),
+                              title: 'Grounding\n5-4-3-2-1',
+                              subtitle: 'Anxiety relief',
+                              onTap: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => const GroundingScreen(),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
                         ],
                       ),
                     ],
@@ -1210,6 +1279,182 @@ class _CommunityForumCard extends StatelessWidget {
                 Icons.arrow_forward_ios_rounded,
                 size: 17,
                 color: Color(0xFF8C6AAF),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BehavioralActivationCard extends StatelessWidget {
+  const _BehavioralActivationCard({required this.accent, required this.onTap});
+
+  final Color accent;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(22),
+        child: Ink(
+          width: double.infinity,
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                const Color(0xFF6B8F71).withValues(alpha: 0.16),
+                Colors.white.withValues(alpha: 0.92),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(
+                color: const Color(0xFF6B8F71).withValues(alpha: 0.12)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.035),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.9),
+                  borderRadius: BorderRadius.circular(17),
+                ),
+                child: const Icon(Icons.wb_sunny_outlined,
+                    color: Color(0xFF52875C), size: 28),
+              ),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Today's Tiny Step",
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF1E2923),
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Behavioral Activation — One small action for today.',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        height: 1.35,
+                        color: Color(0xFF5F7365),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.arrow_forward_ios_rounded,
+                color: Color(0xFF52875C),
+                size: 17,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SavoringLogCard extends StatelessWidget {
+  const _SavoringLogCard({required this.accent, required this.onTap});
+
+  final Color accent;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(22),
+        child: Ink(
+          width: double.infinity,
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                const Color(0xFFFFD98B).withValues(alpha: 0.34),
+                Colors.white.withValues(alpha: 0.94),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(
+              color: const Color(0xFFD49A37).withValues(alpha: 0.16),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.035),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.9),
+                  borderRadius: BorderRadius.circular(17),
+                ),
+                child: const Icon(
+                  Icons.auto_awesome_rounded,
+                  color: Color(0xFFC88722),
+                  size: 28,
+                ),
+              ),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Three Good Things',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF302719),
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Notice three positive moments from today.',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        height: 1.35,
+                        color: Color(0xFF74654C),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.arrow_forward_ios_rounded,
+                color: accent,
+                size: 17,
               ),
             ],
           ),

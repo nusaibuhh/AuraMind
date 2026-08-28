@@ -3,17 +3,56 @@ class MoodPoint {
     required this.timestamp,
     required this.score,
     required this.category,
+    this.behavioralStatus,
   });
 
   final DateTime timestamp;
   final double score;
   final String category;
+  final String? behavioralStatus;
 
   factory MoodPoint.fromJson(Map<String, dynamic> json) {
     return MoodPoint(
       timestamp: DateTime.parse(json['timestamp'] as String).toLocal(),
       score: (json['mood_score'] as num).toDouble(),
       category: (json['category'] as String?) ?? 'normal',
+      behavioralStatus: json['behavioral_status'] as String?,
+    );
+  }
+}
+
+class BehavioralWellbeingSummary {
+  const BehavioralWellbeingSummary({
+    required this.periodDays,
+    required this.completedCount,
+    required this.skippedCount,
+    required this.pendingCount,
+    required this.activeDays,
+    required this.daysWithRecordedMoodAndCompletion,
+    this.patternMessage,
+  });
+
+  final int periodDays;
+  final int completedCount;
+  final int skippedCount;
+  final int pendingCount;
+  final int activeDays;
+  final int daysWithRecordedMoodAndCompletion;
+  final String? patternMessage;
+
+  bool get hasTaskData => completedCount + skippedCount + pendingCount > 0;
+
+  factory BehavioralWellbeingSummary.fromJson(Map<String, dynamic> json) {
+    return BehavioralWellbeingSummary(
+      periodDays: (json['period_days'] as num?)?.toInt() ?? 7,
+      completedCount: (json['completed_count'] as num?)?.toInt() ?? 0,
+      skippedCount: (json['skipped_count'] as num?)?.toInt() ?? 0,
+      pendingCount: (json['pending_count'] as num?)?.toInt() ?? 0,
+      activeDays: (json['active_days'] as num?)?.toInt() ?? 0,
+      daysWithRecordedMoodAndCompletion:
+          (json['days_with_recorded_mood_and_completion'] as num?)?.toInt() ??
+              0,
+      patternMessage: json['pattern_message'] as String?,
     );
   }
 }
@@ -77,6 +116,7 @@ class MoodAnalytics {
     required this.overallChange,
     required this.slope,
     required this.intervention,
+    this.behavioralSummary,
   });
 
   final int periodDays;
@@ -88,6 +128,7 @@ class MoodAnalytics {
   final double overallChange;
   final double slope;
   final Intervention intervention;
+  final BehavioralWellbeingSummary? behavioralSummary;
 
   bool get hasData => points.isNotEmpty;
 
@@ -103,13 +144,17 @@ class MoodAnalytics {
       trend: (json['trend'] as num?)?.toDouble() ?? 0,
       trendLabel: json['trend_label'] as String? ?? 'Stable',
       isDeclining: json['is_declining'] as bool? ?? false,
-      consecutiveDeclines:
-          (json['consecutive_declines'] as num?)?.toInt() ?? 0,
+      consecutiveDeclines: (json['consecutive_declines'] as num?)?.toInt() ?? 0,
       overallChange: (json['overall_change'] as num?)?.toDouble() ?? 0,
       slope: (json['slope'] as num?)?.toDouble() ?? 0,
       intervention: Intervention.fromJson(
         json['intervention'] as Map<String, dynamic>,
       ),
+      behavioralSummary: json['behavioral_summary'] is Map
+          ? BehavioralWellbeingSummary.fromJson(
+              Map<String, dynamic>.from(json['behavioral_summary'] as Map),
+            )
+          : null,
     );
   }
 }

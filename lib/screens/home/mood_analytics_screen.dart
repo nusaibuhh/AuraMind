@@ -162,6 +162,13 @@ class _MoodAnalyticsScreenState extends State<MoodAnalyticsScreen> {
               const SizedBox(height: 16),
               _TrendCard(analytics: analytics, accent: accent),
               const SizedBox(height: 16),
+              if (analytics.behavioralSummary?.hasTaskData ?? false) ...[
+                _BehavioralPatternCard(
+                  summary: analytics.behavioralSummary!,
+                  accent: accent,
+                ),
+                const SizedBox(height: 16),
+              ],
               _InterventionCard(
                 analytics: analytics,
                 accent: accent,
@@ -355,16 +362,18 @@ class _ChartCard extends StatelessWidget {
             Text(
               'Complete a few mood check-ins to see a personalized trend graph.',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13, height: 1.4, color: Color(0xFF718077)),
+              style: TextStyle(
+                  fontSize: 13, height: 1.4, color: Color(0xFF718077)),
             ),
           ],
         ),
       );
     }
 
-    final point = selectedIndex != null && selectedIndex! < analytics.points.length
-        ? analytics.points[selectedIndex!]
-        : null;
+    final point =
+        selectedIndex != null && selectedIndex! < analytics.points.length
+            ? analytics.points[selectedIndex!]
+            : null;
 
     return Container(
       padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
@@ -406,10 +415,11 @@ class _ChartCard extends StatelessWidget {
                 return GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTapUp: (details) {
-                    final left = 36.0;
+                    const left = 36.0;
                     final right = constraints.maxWidth - 14.0;
                     final usable = math.max(1.0, right - left);
-                    final x = details.localPosition.dx.clamp(left, right).toDouble();
+                    final x =
+                        details.localPosition.dx.clamp(left, right).toDouble();
                     final fraction = (x - left) / usable;
                     final index = (fraction * (analytics.points.length - 1))
                         .round()
@@ -501,7 +511,7 @@ class _MoodChartPainter extends CustomPainter {
       ..color = const Color(0xFFE8EDE9)
       ..strokeWidth = 1;
 
-    final labelStyle = const TextStyle(
+    const labelStyle = TextStyle(
       color: Color(0xFF8A968E),
       fontSize: 10,
       fontWeight: FontWeight.w600,
@@ -580,13 +590,15 @@ class _MoodChartPainter extends CustomPainter {
 
     final first = points.first.timestamp;
     final lastDate = points.last.timestamp;
-    _drawText(canvas, _shortDate(first), Offset(left, size.height - 18), labelStyle);
+    _drawText(
+        canvas, _shortDate(first), Offset(left, size.height - 18), labelStyle);
     final lastText = _shortDate(lastDate);
     final painter = TextPainter(
       text: TextSpan(text: lastText, style: labelStyle),
       textDirection: TextDirection.ltr,
     )..layout();
-    painter.paint(canvas, Offset(size.width - right - painter.width, size.height - 18));
+    painter.paint(
+        canvas, Offset(size.width - right - painter.width, size.height - 18));
   }
 
   Offset _offsetFor(
@@ -600,12 +612,14 @@ class _MoodChartPainter extends CustomPainter {
     final x = points.length <= 1
         ? left + width / 2
         : left + (index / (points.length - 1)) * width;
-    final y = top + height - (score.clamp(0.0, 10.0).toDouble() / 10.0) * height;
+    final y =
+        top + height - (score.clamp(0.0, 10.0).toDouble() / 10.0) * height;
     return Offset(x, y);
   }
 
   void _drawPoint(Canvas canvas, Offset point, Color color, bool selected) {
-    final halo = Paint()..color = color.withValues(alpha: selected ? 0.18 : 0.10);
+    final halo = Paint()
+      ..color = color.withValues(alpha: selected ? 0.18 : 0.10);
     canvas.drawCircle(point, selected ? 9 : 6, halo);
     final core = Paint()..color = Colors.white;
     canvas.drawCircle(point, selected ? 6 : 4, core);
@@ -680,7 +694,8 @@ class _TrendCard extends StatelessWidget {
                   children: [
                     const Text(
                       'Trend insight',
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                      style:
+                          TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
                     ),
                     const Spacer(),
                     Text(
@@ -707,6 +722,68 @@ class _TrendCard extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BehavioralPatternCard extends StatelessWidget {
+  const _BehavioralPatternCard({required this.summary, required this.accent});
+
+  final BehavioralWellbeingSummary summary;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(19),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.88),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: accent.withValues(alpha: 0.14)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(Icons.wb_sunny_outlined, color: accent),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Tiny-step pattern',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                ),
+              ),
+              Text(
+                '${summary.completedCount} completed',
+                style: TextStyle(
+                  color: accent,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 13),
+          Text(
+            summary.patternMessage ??
+                'Your tiny-step activity will appear here alongside your recorded mood check-ins when both are available.',
+            style: const TextStyle(
+              fontSize: 13,
+              height: 1.45,
+              color: Color(0xFF6C7A71),
             ),
           ),
         ],
@@ -761,7 +838,8 @@ class _InterventionCard extends StatelessWidget {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(99),
@@ -898,7 +976,8 @@ class _ErrorCard extends StatelessWidget {
       ),
       child: Column(
         children: [
-          const Icon(Icons.cloud_off_rounded, size: 42, color: Color(0xFF9AA69E)),
+          const Icon(Icons.cloud_off_rounded,
+              size: 42, color: Color(0xFF9AA69E)),
           const SizedBox(height: 12),
           const Text(
             'Could not load mood insights',
