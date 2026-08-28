@@ -76,6 +76,32 @@ docker compose up --build
 For anything beyond local development, set `MYSQL_ROOT_PASSWORD` and
 `MYSQL_PASSWORD` in the shell or a root `.env` file before starting Compose.
 
+## Consultation Booking and Payments
+
+The Profile screen includes a **View Psychiatrists** activity with five demo
+practitioner profiles, rolling appointment slots, pay-now/pay-after booking,
+and a personal consultation history. Slot updates are atomic: once one user
+holds or books a slot, it is unavailable to other users.
+
+Online checkout uses the SSLCOMMERZ hosted payment page. The backend keeps the
+store password private, receives callbacks/IPN, and validates the transaction
+ID, amount, currency, status, and risk level with SSLCOMMERZ before marking a
+pay-now booking as confirmed.
+
+Create a sandbox account and add these values to `FastAPI/.env`:
+
+```dotenv
+SSLCOMMERZ_STORE_ID=your_sandbox_store_id
+SSLCOMMERZ_STORE_PASSWORD=your_sandbox_store_password
+SSLCOMMERZ_SANDBOX=true
+PUBLIC_API_BASE_URL=https://your-public-backend.example.com
+```
+
+`PUBLIC_API_BASE_URL` must be reachable by SSLCOMMERZ for IPN callbacks. For
+local mobile testing, use a trusted HTTPS tunnel and configure the same IPN URL
+in the SSLCOMMERZ merchant panel. Payment methods displayed by hosted checkout
+depend on the gateways enabled for the merchant account.
+
 ## Project Structure
 
 ```

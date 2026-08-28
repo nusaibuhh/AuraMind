@@ -392,6 +392,8 @@ String _getPostWakeFeelingLabel(int feeling) {
       return 'Normal';
     case 2:
       return 'Refreshed';
+    case 3:
+      return 'Annoyed';
     default:
       return 'Unknown';
   }
@@ -405,5 +407,7 @@ String _getPostWakeFeelingLabelFromEnum(PostWakeFeeling feeling) {
       return 'Normal';
     case PostWakeFeeling.refreshed:
       return 'Refreshed';
+    case PostWakeFeeling.annoyed:
+      return 'Annoyed';
   }
 }

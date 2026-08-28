@@ -151,6 +151,27 @@ void main() {
       expect(point.behavioralActivityCompleted, isTrue);
       expect(point.behavioralActivityTitle, 'Walk for 5 minutes');
     });
+
+    test('Sleep log supports annoyed without changing existing enum indexes',
+        () {
+      final log = SleepLog.fromJson({
+        'id': 'sleep_123',
+        'user_id': 'user_123',
+        'date': '2026-08-29T08:00:00',
+        'sleep_hours': 7,
+        'sleep_minutes': 15,
+        'quality': 3,
+        'post_wake_feeling': 3,
+        'notes': null,
+        'created_at': '2026-08-29T08:01:00',
+      });
+
+      expect(PostWakeFeeling.tired.index, 0);
+      expect(PostWakeFeeling.normal.index, 1);
+      expect(PostWakeFeeling.refreshed.index, 2);
+      expect(log.postWakeFeeling, PostWakeFeeling.annoyed);
+      expect(log.toJson()['post_wake_feeling'], 3);
+    });
   });
 
   group('Behavioral Activation UI Rendering', () {

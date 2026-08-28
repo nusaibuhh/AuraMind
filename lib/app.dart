@@ -15,6 +15,7 @@ import 'providers/mood_momentum_provider.dart';
 import 'providers/journal_provider.dart';
 import 'providers/behavioral_activation_provider.dart';
 import 'providers/savoring_provider.dart';
+import 'providers/consultation_provider.dart';
 
 import 'screens/auth/login_screen.dart';
 import 'screens/checkin/intro_screen.dart';
@@ -45,12 +46,16 @@ class AuraMindApp extends StatelessWidget {
           create: (_) => MoodAnalyticsProvider(_sharedApiService),
         ),
         ChangeNotifierProvider(create: (_) => MoodMomentumProvider()),
-        ChangeNotifierProvider(create: (_) => JournalProvider(_sharedApiService)),
+        ChangeNotifierProvider(
+            create: (_) => JournalProvider(_sharedApiService)),
         ChangeNotifierProvider(
           create: (_) => BehavioralActivationProvider(_sharedApiService),
         ),
         ChangeNotifierProvider(
           create: (_) => SavoringProvider(_sharedApiService),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => ConsultationProvider(_sharedApiService),
         ),
       ],
       child: Consumer<AppThemeProvider>(
@@ -78,6 +83,7 @@ class _AppRouterState extends State<_AppRouter> {
   String? _loadedUserId;
   String? _behavioralActivationUserId;
   String? _savoringUserId;
+  String? _consultationUserId;
 
   void _syncThemeForUser(AuthProvider auth, AppThemeProvider themeProvider) {
     if (!auth.isLoggedIn) {
@@ -125,6 +131,20 @@ class _AppRouterState extends State<_AppRouter> {
     });
   }
 
+  void _syncConsultationsForUser(
+    AuthProvider auth,
+    ConsultationProvider consultations,
+  ) {
+    final userId = auth.user?.id;
+    if (_consultationUserId == userId) return;
+
+    _consultationUserId = userId;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      consultations.reset();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
@@ -132,10 +152,12 @@ class _AppRouterState extends State<_AppRouter> {
     final themeProvider = context.watch<AppThemeProvider>();
     final behavioralActivation = context.read<BehavioralActivationProvider>();
     final savoring = context.read<SavoringProvider>();
+    final consultations = context.read<ConsultationProvider>();
 
     _syncThemeForUser(auth, themeProvider);
     _syncBehavioralActivationForUser(auth, behavioralActivation);
     _syncSavoringForUser(auth, savoring);
+    _syncConsultationsForUser(auth, consultations);
 
     if (!auth.isLoggedIn) {
       return const LoginScreen();

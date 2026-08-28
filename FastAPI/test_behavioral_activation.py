@@ -523,3 +523,50 @@ def test_sleep_correlation_includes_same_day_behavioral_context(setup_test_db):
     assert point["mood_score"] == 4.2
     assert point["behavioral_status"] == "completed"
     assert point["behavioral_activity_title"] == task["activity"]["title"]
+
+
+def test_sleep_correlation_joins_mood_on_device_local_date(setup_test_db):
+    client = TestClient(app)
+    signup = client.post(
+        "/auth/signup",
+        json={
+            "name": "Local Date",
+            "email": "local-date@example.com",
+            "password": "pass123",
+        },
+    ).json()
+    headers = {
+        "Authorization": f"Bearer {signup['access_token']}",
+        "X-Timezone-Offset-Minutes": "360",
+    }
+
+    utc_timestamp = datetime.now(timezone.utc).replace(
+        hour=22, minute=0, second=0, microsecond=0, tzinfo=None
+    ).isoformat()
+    local_date = fastapi_app._local_date_from_iso(utc_timestamp, 360)
+    setup_test_db.execute(
+        """INSERT INTO MOOD_CHECKINS
+           (id, user_id, answers, created_at, mood_score, dominant_category)
+           VALUES (?, ?, '{}', ?, 6.4, 'normal')""",
+        ("mood_local_date", signup["user_id"], utc_timestamp),
+    )
+    setup_test_db.execute(
+        """INSERT INTO SLEEP_LOGS
+           (id, user_id, date, sleep_hours, sleep_minutes, quality,
+            post_wake_feeling, notes, created_at)
+           VALUES (?, ?, ?, 6, 30, 3, 3, NULL, ?)""",
+        (
+            "sleep_local_date",
+            signup["user_id"],
+            f"{local_date}T08:00:00",
+            utc_timestamp,
+        ),
+    )
+    setup_test_db.commit()
+
+    response = client.get("/sleep/correlation?days=7", headers=headers)
+    assert response.status_code == 200
+    point = response.json()[0]
+    assert point["date"] == local_date
+    assert point["sleep_hours"] == 6.5
+    assert point["mood_score"] == 6.4
