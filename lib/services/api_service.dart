@@ -36,6 +36,10 @@ class ApiService {
 
   Map<String, String> get _headers => {
         'Content-Type': 'application/json',
+        // Free ngrok tunnels otherwise serve an HTML warning page to browser
+        // requests, which Flutter Web reports as a generic "Failed to fetch".
+        // Non-ngrok API servers safely ignore this header.
+        'ngrok-skip-browser-warning': 'true',
         'X-Timezone-Offset-Minutes':
             DateTime.now().timeZoneOffset.inMinutes.toString(),
         if (_token != null) 'Authorization': 'Bearer $_token',

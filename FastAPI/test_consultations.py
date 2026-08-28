@@ -107,6 +107,24 @@ def _signup(client, suffix):
     return {"Authorization": f"Bearer {payload['access_token']}"}
 
 
+def test_sslcommerz_uses_current_sandbox_endpoints(monkeypatch):
+    monkeypatch.setenv("SSLCOMMERZ_STORE_ID", "sandbox-store")
+    monkeypatch.setenv("SSLCOMMERZ_STORE_PASSWORD", "sandbox-password")
+    monkeypatch.setenv("SSLCOMMERZ_SANDBOX", "true")
+
+    settings = fastapi_app._sslcommerz_settings()
+
+    assert settings["init_url"] == (
+        "https://sandbox-gw.sslcommerz.com/gwprocess/v4/api.php"
+    )
+    assert settings["validation_url"].startswith(
+        "https://sandbox.sslcommerz.com/validator/"
+    )
+    assert settings["query_url"].startswith(
+        "https://sandbox.sslcommerz.com/validator/"
+    )
+
+
 def test_demo_catalog_and_atomic_slot_booking():
     client = TestClient(app)
     first_user = _signup(client, "one")

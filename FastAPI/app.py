@@ -3341,11 +3341,14 @@ def _sslcommerz_settings():
     public_base_url = os.getenv(
         "PUBLIC_API_BASE_URL", "http://127.0.0.1:8000"
     ).strip().rstrip("/")
-    api_base = (
-        "https://sandbox.sslcommerz.com"
-        if sandbox
-        else "https://securepay.sslcommerz.com"
-    )
+    if sandbox:
+        # New sandbox stores are created on sandbox-gw. SSLCommerz still
+        # documents transaction validation and query APIs on the legacy
+        # sandbox host, so keep the two bases separate.
+        initiation_base = "https://sandbox-gw.sslcommerz.com"
+        validator_base = "https://sandbox.sslcommerz.com"
+    else:
+        initiation_base = validator_base = "https://securepay.sslcommerz.com"
     configured = bool(
         store_id
         and store_password
@@ -3357,9 +3360,13 @@ def _sslcommerz_settings():
         "store_id": store_id,
         "store_password": store_password,
         "public_base_url": public_base_url,
-        "init_url": f"{api_base}/gwprocess/v4/api.php",
-        "validation_url": f"{api_base}/validator/api/validationserverAPI.php",
-        "query_url": f"{api_base}/validator/api/merchantTransIDvalidationAPI.php",
+        "init_url": f"{initiation_base}/gwprocess/v4/api.php",
+        "validation_url": (
+            f"{validator_base}/validator/api/validationserverAPI.php"
+        ),
+        "query_url": (
+            f"{validator_base}/validator/api/merchantTransIDvalidationAPI.php"
+        ),
     }
 
 

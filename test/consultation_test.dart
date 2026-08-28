@@ -107,9 +107,11 @@ void main() {
 
   test('API sends booking timing and parses the reserved booking', () async {
     late Map<String, dynamic> requestBody;
+    late Map<String, String> requestHeaders;
     final api = ApiService(
       client: MockClient((request) async {
         requestBody = jsonDecode(request.body) as Map<String, dynamic>;
+        requestHeaders = request.headers;
         return _jsonResponse(_bookingPayload());
       }),
     );
@@ -122,6 +124,7 @@ void main() {
 
     expect(requestBody['payment_timing'], 'before');
     expect(requestBody['slot_id'], 'slot_free');
+    expect(requestHeaders['ngrok-skip-browser-warning'], 'true');
     expect(booking.isPaid, isTrue);
   });
 
