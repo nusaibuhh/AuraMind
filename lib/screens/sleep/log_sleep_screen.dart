@@ -463,5 +463,7 @@ String _getPostWakeFeelingLabel(PostWakeFeeling feeling) {
       return 'Normal';
     case PostWakeFeeling.refreshed:
       return 'Refreshed';
+    case PostWakeFeeling.annoyed:
+      return 'Annoyed';
   }
 }

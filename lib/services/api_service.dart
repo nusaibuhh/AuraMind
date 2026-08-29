@@ -10,6 +10,7 @@ import '../models/community_comment.dart';
 import '../models/community_post.dart';
 import '../models/mood_analytics.dart';
 import '../models/best_self_vision.dart';
+import '../models/consultation.dart';
 import '../models/journal_entry.dart';
 import '../models/savoring_log.dart';
 import '../models/theme_palette.dart';
@@ -35,6 +36,10 @@ class ApiService {
 
   Map<String, String> get _headers => {
         'Content-Type': 'application/json',
+        // Free ngrok tunnels otherwise serve an HTML warning page to browser
+        // requests, which Flutter Web reports as a generic "Failed to fetch".
+        // Non-ngrok API servers safely ignore this header.
+        'ngrok-skip-browser-warning': 'true',
         'X-Timezone-Offset-Minutes':
             DateTime.now().timeZoneOffset.inMinutes.toString(),
         if (_token != null) 'Authorization': 'Bearer $_token',
@@ -210,7 +215,8 @@ class ApiService {
     await _handleResponse(response);
   }
 
-  Future<({String name, String email, String? emergencyContact})> updateProfile({
+  Future<({String name, String email, String? emergencyContact})>
+      updateProfile({
     required String name,
     required String email,
     required String emergencyContact,
@@ -232,7 +238,8 @@ class ApiService {
     );
   }
 
-  Future<({String name, String email, String? emergencyContact})> getProfile() async {
+  Future<({String name, String email, String? emergencyContact})>
+      getProfile() async {
     final response = await _client.get(
       Uri.parse('${ApiConfig.baseUrl}/profile/me'),
       headers: _headers,
@@ -683,6 +690,103 @@ class ApiService {
     );
     final result = await _handleResponse(response);
     return result is List ? result : [];
+  }
+
+  // ===== Consultation Booking and Payment Endpoints =====
+
+  Future<List<Psychiatrist>> getConsultationPractitioners({
+    int days = 14,
+  }) async {
+    final response = await _withTimeout(
+      _client.get(
+        Uri.parse(
+            '${ApiConfig.baseUrl}/consultations/practitioners?days=$days'),
+        headers: _headers,
+      ),
+    );
+    final result = await _handleResponse(response);
+    return (result as List)
+        .map((item) => Psychiatrist.fromJson(
+              Map<String, dynamic>.from(item as Map),
+            ))
+        .toList();
+  }
+
+  Future<ConsultationBooking> createConsultationBooking({
+    required String practitionerId,
+    required String slotId,
+    required String paymentTiming,
+  }) async {
+    final response = await _withTimeout(
+      _client.post(
+        Uri.parse('${ApiConfig.baseUrl}/consultations/bookings'),
+        headers: _headers,
+        body: jsonEncode({
+          'practitioner_id': practitionerId,
+          'slot_id': slotId,
+          'payment_timing': paymentTiming,
+        }),
+      ),
+    );
+    final result = await _handleResponse(response);
+    return ConsultationBooking.fromJson(
+      Map<String, dynamic>.from(result as Map),
+    );
+  }
+
+  Future<List<ConsultationBooking>> getMyConsultationBookings() async {
+    final response = await _withTimeout(
+      _client.get(
+        Uri.parse('${ApiConfig.baseUrl}/consultations/bookings/me'),
+        headers: _headers,
+      ),
+    );
+    final result = await _handleResponse(response);
+    return (result as List)
+        .map((item) => ConsultationBooking.fromJson(
+              Map<String, dynamic>.from(item as Map),
+            ))
+        .toList();
+  }
+
+  Future<ConsultationCheckout> startConsultationPayment({
+    required String bookingId,
+    required String method,
+    required String customerPhone,
+  }) async {
+    final response = await _client
+        .post(
+          Uri.parse(
+            '${ApiConfig.baseUrl}/consultations/bookings/$bookingId/payments',
+          ),
+          headers: _headers,
+          body: jsonEncode({
+            'method': method,
+            'customer_phone': customerPhone,
+          }),
+        )
+        .timeout(const Duration(seconds: 25));
+    final result = await _handleResponse(response);
+    return ConsultationCheckout.fromJson(
+      Map<String, dynamic>.from(result as Map),
+    );
+  }
+
+  Future<ConsultationBooking> refreshConsultationPayment(
+    String bookingId,
+  ) async {
+    final response = await _client
+        .post(
+          Uri.parse(
+            '${ApiConfig.baseUrl}/consultations/bookings/$bookingId/payments/refresh',
+          ),
+          headers: _headers,
+        )
+        .timeout(const Duration(seconds: 25));
+    final result = await _handleResponse(response);
+    return ConsultationBooking.fromJson(
+      Map<String, dynamic>.from(result as Map),
+    );
   }
 
   static Color _hexColor(String hex) {

@@ -1,6 +1,8 @@
 enum SleepQuality { poor, fair, okay, good, excellent }
 
-enum PostWakeFeeling { tired, normal, refreshed }
+// Keep new values at the end so records already stored as 0, 1, and 2 retain
+// their original tired, normal, and refreshed meanings.
+enum PostWakeFeeling { tired, normal, refreshed, annoyed }
 
 class SleepLog {
   final String id;

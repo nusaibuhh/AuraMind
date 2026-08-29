@@ -15,6 +15,7 @@ dependencies:
   pedometer: ^4.0.2
   permission_handler: ^11.3.1
   flutter_tts: ^4.2.5
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:

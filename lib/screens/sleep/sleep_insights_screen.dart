@@ -447,8 +447,11 @@ class _CorrelationChart extends StatelessWidget {
   Widget build(BuildContext context) {
     if (correlations.isEmpty) return const SizedBox();
 
-    final maxSleep =
+    final recordedMaxSleep =
         correlations.map((c) => c.sleepHours).reduce((a, b) => a > b ? a : b);
+    // Mood-only dates legitimately have zero sleep data. Keep the chart scale
+    // finite until a sleep record exists so CustomPaint never receives NaN.
+    final maxSleep = recordedMaxSleep > 0 ? recordedMaxSleep : 1.0;
     const maxMood = 10.0;
     final recordedActivityDays =
         correlations.where((item) => item.hasBehavioralActivity).toList();
@@ -647,5 +650,13 @@ class _LineChartPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_LineChartPainter oldDelegate) => false;
+  bool shouldRepaint(_LineChartPainter oldDelegate) {
+    // API refreshes replace the correlation list. The old implementation
+    // always returned false, leaving the chart frozen on its first dataset.
+    return oldDelegate.correlations != correlations ||
+        oldDelegate.maxSleep != maxSleep ||
+        oldDelegate.maxMood != maxMood ||
+        oldDelegate.sleepColor != sleepColor ||
+        oldDelegate.moodColor != moodColor;
+  }
 }

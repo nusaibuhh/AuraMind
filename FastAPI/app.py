@@ -19,12 +19,17 @@ import re
 import sqlite3
 import uuid
 import os
+from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Literal, Optional
+from urllib.error import HTTPError, URLError
+from urllib.parse import parse_qs, urlencode
+from urllib.request import Request as UrlRequest, urlopen
 
-from fastapi import FastAPI, HTTPException, Header, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Header, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field, model_validator
 import pymysql
 from pymysql.err import IntegrityError
@@ -365,9 +370,88 @@ def connect_db():
         "log_id",
     )
 
+    # Consultation practitioners, slots, bookings, and verified payments.
+    c.execute("""CREATE TABLE IF NOT EXISTS CONSULTATION_PRACTITIONERS (
+        id VARCHAR(64) PRIMARY KEY,
+        name TEXT NOT NULL,
+        qualifications TEXT NOT NULL,
+        specialty TEXT NOT NULL,
+        consultation_minutes INTEGER NOT NULL,
+        contact_no TEXT NOT NULL,
+        chamber TEXT NOT NULL,
+        fee_amount DECIMAL(10, 2) NOT NULL,
+        currency VARCHAR(3) NOT NULL DEFAULT 'BDT',
+        is_demo INTEGER NOT NULL DEFAULT 1,
+        is_active INTEGER NOT NULL DEFAULT 1
+    )""")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS CONSULTATION_SLOTS (
+        id VARCHAR(64) PRIMARY KEY,
+        practitioner_id VARCHAR(64) NOT NULL,
+        starts_at VARCHAR(40) NOT NULL,
+        ends_at VARCHAR(40) NOT NULL,
+        status VARCHAR(24) NOT NULL DEFAULT 'free',
+        held_until TEXT,
+        booked_by_user_id VARCHAR(64),
+        booking_id VARCHAR(64)
+    )""")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS CONSULTATION_BOOKINGS (
+        id VARCHAR(64) PRIMARY KEY,
+        user_id VARCHAR(64) NOT NULL,
+        practitioner_id VARCHAR(64) NOT NULL,
+        slot_id VARCHAR(64) NOT NULL,
+        status VARCHAR(24) NOT NULL,
+        payment_timing VARCHAR(16) NOT NULL,
+        payment_status VARCHAR(24) NOT NULL DEFAULT 'unpaid',
+        fee_amount DECIMAL(10, 2) NOT NULL,
+        currency VARCHAR(3) NOT NULL DEFAULT 'BDT',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )""")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS CONSULTATION_PAYMENTS (
+        id VARCHAR(64) PRIMARY KEY,
+        booking_id VARCHAR(64) NOT NULL,
+        user_id VARCHAR(64) NOT NULL,
+        provider VARCHAR(32) NOT NULL,
+        method VARCHAR(24) NOT NULL,
+        status VARCHAR(24) NOT NULL,
+        amount DECIMAL(10, 2) NOT NULL,
+        currency VARCHAR(3) NOT NULL,
+        transaction_id VARCHAR(64) NOT NULL UNIQUE,
+        session_key VARCHAR(100),
+        gateway_url TEXT,
+        validation_id VARCHAR(100),
+        bank_transaction_id VARCHAR(100),
+        card_type TEXT,
+        created_at TEXT NOT NULL,
+        paid_at TEXT
+    )""")
+
+    _ensure_index(
+        c,
+        "CONSULTATION_SLOTS",
+        "consultation_slots_practitioner_start_idx",
+        "practitioner_id, starts_at",
+    )
+    _ensure_index(
+        c,
+        "CONSULTATION_BOOKINGS",
+        "consultation_bookings_user_created_idx",
+        "user_id, created_at",
+    )
+    _ensure_index(
+        c,
+        "CONSULTATION_PAYMENTS",
+        "consultation_payments_booking_created_idx",
+        "booking_id, created_at",
+    )
+
     conn.commit()
     seed_palettes(conn)
     seed_behavioral_activities(conn)
+    seed_consultation_catalog(conn)
     conn.close()
 
 
@@ -404,6 +488,122 @@ def seed_behavioral_activities(conn):
             VALUES (?, ?, ?, ?, ?, ?, 1, ?)""",
             (act[0], act[1], act[2], act[3], act[4], act[5], created_timestamp),
         )
+    conn.commit()
+
+
+def seed_consultation_catalog(conn):
+    """Seed five clearly-labelled demo psychiatrists and rolling Dhaka slots."""
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM CONSULTATION_PRACTITIONERS")
+    if c.fetchone()[0] == 0:
+        practitioners = [
+            (
+                "psych_farhana_rahman",
+                "Dr. Farhana Rahman",
+                "MBBS, FCPS (Psychiatry)",
+                "Adult psychiatry and anxiety care",
+                30,
+                "+880 1711-100001",
+                "Popular Diagnostic Centre, Dhanmondi, Dhaka",
+                "1800.00",
+            ),
+            (
+                "psych_tanvir_hasan",
+                "Dr. Tanvir Hasan",
+                "MBBS, MD (Psychiatry)",
+                "Mood disorders and psychotherapy",
+                40,
+                "+880 1711-100002",
+                "Ibn Sina Diagnostic, Dhanmondi, Dhaka",
+                "2000.00",
+            ),
+            (
+                "psych_nusrat_jahan",
+                "Dr. Nusrat Jahan",
+                "MBBS, MPhil (Psychiatry)",
+                "Women’s mental health and stress",
+                30,
+                "+880 1711-100003",
+                "Labaid Specialized Hospital, Dhaka",
+                "1700.00",
+            ),
+            (
+                "psych_mahbub_alam",
+                "Dr. Mahbub Alam",
+                "MBBS, FCPS, MCPS (Psychiatry)",
+                "Addiction psychiatry and sleep concerns",
+                45,
+                "+880 1711-100004",
+                "Square Hospital Consultation Centre, Dhaka",
+                "2200.00",
+            ),
+            (
+                "psych_samira_khan",
+                "Dr. Samira Khan",
+                "MBBS, MD, Fellowship in Child Psychiatry",
+                "Child, adolescent, and family mental health",
+                40,
+                "+880 1711-100005",
+                "United Hospital Consultation Centre, Dhaka",
+                "2100.00",
+            ),
+        ]
+        for practitioner in practitioners:
+            c.execute(
+                """INSERT INTO CONSULTATION_PRACTITIONERS
+                   (id, name, qualifications, specialty,
+                    consultation_minutes, contact_no, chamber, fee_amount,
+                    currency, is_demo, is_active)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'BDT', 1, 1)""",
+                practitioner,
+            )
+
+    c.execute(
+        """SELECT id, consultation_minutes
+           FROM CONSULTATION_PRACTITIONERS WHERE is_active=1 ORDER BY id"""
+    )
+    practitioner_rows = c.fetchall()
+    dhaka_timezone = timezone(timedelta(hours=6))
+    local_now = datetime.now(dhaka_timezone)
+    daily_times = ((10, 0), (11, 30), (15, 0))
+    for practitioner_index, practitioner_row in enumerate(practitioner_rows):
+        practitioner_id, consultation_minutes = practitioner_row
+        for day_offset in range(8):
+            local_day = (local_now + timedelta(days=day_offset)).date()
+            for time_index, (hour, minute) in enumerate(daily_times):
+                shifted_hour = hour + (practitioner_index + time_index) % 2
+                starts_at = datetime(
+                    local_day.year,
+                    local_day.month,
+                    local_day.day,
+                    shifted_hour,
+                    minute,
+                    tzinfo=dhaka_timezone,
+                )
+                if starts_at <= local_now + timedelta(minutes=30):
+                    continue
+                ends_at = starts_at + timedelta(minutes=consultation_minutes)
+                slot_id = uuid.uuid5(
+                    uuid.NAMESPACE_URL,
+                    f"auramind:{practitioner_id}:{starts_at.isoformat()}",
+                ).hex
+                c.execute(
+                    "SELECT id FROM CONSULTATION_SLOTS WHERE id=?",
+                    (slot_id,),
+                )
+                if c.fetchone() is not None:
+                    continue
+                c.execute(
+                    """INSERT INTO CONSULTATION_SLOTS
+                       (id, practitioner_id, starts_at, ends_at, status)
+                       VALUES (?, ?, ?, ?, 'free')""",
+                    (
+                        slot_id,
+                        practitioner_id,
+                        starts_at.isoformat(),
+                        ends_at.isoformat(),
+                    ),
+                )
     conn.commit()
 
 
@@ -516,8 +716,23 @@ class SaveSleepLogRequest(BaseModel):
     sleep_hours: int
     sleep_minutes: int
     quality: int  # 0-4 (poor, fair, okay, good, excellent)
-    post_wake_feeling: int  # 0-2 (tired, normal, refreshed)
+    post_wake_feeling: int = Field(
+        ge=0,
+        le=3,
+        description="0-3 (tired, normal, refreshed, annoyed)",
+    )
     notes: Optional[str] = None
+
+
+class CreateConsultationBookingRequest(BaseModel):
+    practitioner_id: str = Field(min_length=1, max_length=64)
+    slot_id: str = Field(min_length=1, max_length=64)
+    payment_timing: Literal["before", "after"]
+
+
+class CreateConsultationPaymentRequest(BaseModel):
+    method: Literal["bkash", "nagad", "bank_card"]
+    customer_phone: str = Field(min_length=10, max_length=20)
 
 
 # Breathing Exercise Schemas
@@ -1168,15 +1383,21 @@ def get_sleep_mood_correlation(
     conn = connect_db_connection()
     c = conn.cursor()
 
-    cutoff_date = (
+    cutoff_timestamp = (
         datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
     ).isoformat()
+    local_today = datetime.strptime(
+        _local_date_for_offset(x_timezone_offset_minutes), "%Y-%m-%d"
+    )
+    cutoff_local_date = (
+        local_today - timedelta(days=days - 1)
+    ).strftime("%Y-%m-%d")
 
     # Get sleep data
     c.execute(
         """SELECT date, sleep_hours, sleep_minutes FROM SLEEP_LOGS
         WHERE user_id=? AND created_at >= ? ORDER BY date""",
-        (user_id, cutoff_date),
+        (user_id, cutoff_timestamp),
     )
 
     sleep_data = {}
@@ -1191,7 +1412,7 @@ def get_sleep_mood_correlation(
            FROM BEHAVIORAL_DAILY_TASKS t
            JOIN BEHAVIORAL_ACTIVITIES a ON t.activity_id = a.id
            WHERE t.user_id = ? AND t.task_date >= ?""",
-        (user_id, cutoff_date.split("T")[0]),
+        (user_id, cutoff_local_date),
     )
     behavioral_by_date = {
         row[0]: {"status": row[1], "title": row[2]} for row in c.fetchall()
@@ -1202,13 +1423,18 @@ def get_sleep_mood_correlation(
     c.execute(
         """SELECT created_at, mood_score, answers FROM MOOD_CHECKINS
         WHERE user_id=? AND created_at >= ? ORDER BY created_at""",
-        (user_id, cutoff_date),
+        (user_id, cutoff_timestamp),
     )
 
     correlations = []
     for row in c.fetchall():
         created_at, mood_score_db, answers_json = row
-        date_key = created_at.split('T')[0]
+        # Mood timestamps are stored in UTC, while sleep logs and tiny-step
+        # task dates represent the device's local day. Convert before joining
+        # them so evening/early-morning entries update the same chart point.
+        date_key = _local_date_from_iso(
+            created_at, x_timezone_offset_minutes
+        )
 
         final_mood_score = None
         if mood_score_db is not None:
@@ -2823,5 +3049,780 @@ def get_savoring_history(
     )
     rows = c.fetchall()
     response = [_format_savoring_log(c, row) for row in rows]
+    conn.close()
+    return response
+
+
+# =====================================================================
+# CONSULTATION BOOKING AND SSLCOMMERZ PAYMENTS
+# =====================================================================
+
+def _consultation_money(value) -> float:
+    return float(Decimal(str(value)).quantize(Decimal("0.01")))
+
+
+def _release_expired_consultation_holds(c):
+    current_timestamp = now()
+    c.execute(
+        """SELECT booking_id FROM CONSULTATION_SLOTS
+           WHERE status='held' AND held_until IS NOT NULL AND held_until < ?""",
+        (current_timestamp,),
+    )
+    expired_booking_ids = [row[0] for row in c.fetchall() if row[0]]
+    for booking_id in expired_booking_ids:
+        c.execute(
+            """UPDATE CONSULTATION_BOOKINGS
+               SET status='expired', payment_status='unpaid', updated_at=?
+               WHERE id=? AND status='pending_payment'""",
+            (current_timestamp, booking_id),
+        )
+        c.execute(
+            """UPDATE CONSULTATION_SLOTS
+               SET status='free', held_until=NULL,
+                   booked_by_user_id=NULL, booking_id=NULL
+               WHERE booking_id=? AND status='held'""",
+            (booking_id,),
+        )
+
+
+def _format_consultation_booking(c, booking_id: str, user_id: str):
+    c.execute(
+        """SELECT b.id, b.user_id, b.practitioner_id, b.slot_id,
+                  b.status, b.payment_timing, b.payment_status,
+                  b.fee_amount, b.currency, b.created_at, b.updated_at,
+                  p.name, p.qualifications, p.specialty,
+                  p.consultation_minutes, p.contact_no, p.chamber,
+                  s.starts_at, s.ends_at, s.status
+           FROM CONSULTATION_BOOKINGS b
+           JOIN CONSULTATION_PRACTITIONERS p ON p.id=b.practitioner_id
+           JOIN CONSULTATION_SLOTS s ON s.id=b.slot_id
+           WHERE b.id=? AND b.user_id=?""",
+        (booking_id, user_id),
+    )
+    row = c.fetchone()
+    if row is None:
+        return None
+
+    c.execute(
+        """SELECT id, provider, method, status, transaction_id,
+                  session_key, validation_id, bank_transaction_id,
+                  card_type, created_at, paid_at
+           FROM CONSULTATION_PAYMENTS
+           WHERE booking_id=? ORDER BY created_at DESC LIMIT 1""",
+        (booking_id,),
+    )
+    payment_row = c.fetchone()
+    payment = None
+    if payment_row is not None:
+        payment = {
+            "id": payment_row[0],
+            "provider": payment_row[1],
+            "method": payment_row[2],
+            "status": payment_row[3],
+            "transaction_id": payment_row[4],
+            "session_key": payment_row[5],
+            "validation_id": payment_row[6],
+            "bank_transaction_id": payment_row[7],
+            "card_type": payment_row[8],
+            "created_at": payment_row[9],
+            "paid_at": payment_row[10],
+        }
+
+    return {
+        "id": row[0],
+        "user_id": row[1],
+        "practitioner_id": row[2],
+        "slot_id": row[3],
+        "status": row[4],
+        "payment_timing": row[5],
+        "payment_status": row[6],
+        "fee_amount": _consultation_money(row[7]),
+        "currency": row[8],
+        "created_at": row[9],
+        "updated_at": row[10],
+        "practitioner": {
+            "id": row[2],
+            "name": row[11],
+            "qualifications": row[12],
+            "specialty": row[13],
+            "consultation_minutes": row[14],
+            "contact_no": row[15],
+            "chamber": row[16],
+        },
+        "slot": {
+            "id": row[3],
+            "starts_at": row[17],
+            "ends_at": row[18],
+            "status": row[19],
+        },
+        "payment": payment,
+    }
+
+
+@app.get("/consultations/practitioners")
+def get_consultation_practitioners(
+    days: int = 14,
+    authorization: Optional[str] = Header(None),
+):
+    user = require_user(authorization)
+    if not 1 <= days <= 30:
+        raise HTTPException(status_code=400, detail="days must be between 1 and 30")
+
+    conn = connect_db_connection()
+    c = conn.cursor()
+    _release_expired_consultation_holds(c)
+    conn.commit()
+
+    c.execute(
+        """SELECT id, name, qualifications, specialty,
+                  consultation_minutes, contact_no, chamber,
+                  fee_amount, currency, is_demo
+           FROM CONSULTATION_PRACTITIONERS
+           WHERE is_active=1 ORDER BY name"""
+    )
+    practitioners = []
+    local_now = datetime.now(timezone(timedelta(hours=6)))
+    cutoff = local_now + timedelta(days=days)
+    for row in c.fetchall():
+        c.execute(
+            """SELECT id, starts_at, ends_at, status, booked_by_user_id
+               FROM CONSULTATION_SLOTS
+               WHERE practitioner_id=? AND starts_at>=? AND starts_at<=?
+               ORDER BY starts_at""",
+            (row[0], local_now.isoformat(), cutoff.isoformat()),
+        )
+        slots = [
+            {
+                "id": slot[0],
+                "starts_at": slot[1],
+                "ends_at": slot[2],
+                "status": slot[3],
+                "is_available": slot[3] == "free",
+                "booked_by_me": slot[4] == user["id"],
+            }
+            for slot in c.fetchall()
+        ]
+        practitioners.append(
+            {
+                "id": row[0],
+                "name": row[1],
+                "qualifications": row[2],
+                "specialty": row[3],
+                "consultation_minutes": row[4],
+                "contact_no": row[5],
+                "chamber": row[6],
+                "fee_amount": _consultation_money(row[7]),
+                "currency": row[8],
+                "is_demo": bool(row[9]),
+                "slots": slots,
+            }
+        )
+    conn.close()
+    return practitioners
+
+
+@app.post("/consultations/bookings")
+def create_consultation_booking(
+    req: CreateConsultationBookingRequest,
+    authorization: Optional[str] = Header(None),
+):
+    user = require_user(authorization)
+    conn = connect_db_connection()
+    c = conn.cursor()
+    _release_expired_consultation_holds(c)
+
+    c.execute(
+        """SELECT s.id, s.practitioner_id, s.starts_at, s.status,
+                  p.fee_amount, p.currency, p.is_active
+           FROM CONSULTATION_SLOTS s
+           JOIN CONSULTATION_PRACTITIONERS p ON p.id=s.practitioner_id
+           WHERE s.id=? AND s.practitioner_id=?""",
+        (req.slot_id, req.practitioner_id),
+    )
+    slot = c.fetchone()
+    if slot is None or not bool(slot[6]):
+        conn.close()
+        raise HTTPException(status_code=404, detail="Consultation slot not found")
+
+    try:
+        slot_start = datetime.fromisoformat(slot[2])
+        slot_now = datetime.now(slot_start.tzinfo) if slot_start.tzinfo else datetime.now()
+        if slot_start <= slot_now:
+            conn.close()
+            raise HTTPException(status_code=409, detail="This slot has already passed")
+    except ValueError:
+        conn.close()
+        raise HTTPException(status_code=500, detail="Slot time is invalid")
+
+    booking_id = uuid.uuid4().hex
+    timestamp = now()
+    pay_before = req.payment_timing == "before"
+    booking_status = "pending_payment" if pay_before else "confirmed"
+    slot_status = "held" if pay_before else "booked"
+    held_until = (
+        datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=15)
+    ).isoformat() if pay_before else None
+
+    c.execute(
+        """UPDATE CONSULTATION_SLOTS
+           SET status=?, held_until=?, booked_by_user_id=?, booking_id=?
+           WHERE id=? AND status='free'""",
+        (slot_status, held_until, user["id"], booking_id, req.slot_id),
+    )
+    if c.rowcount != 1:
+        conn.rollback()
+        conn.close()
+        raise HTTPException(
+            status_code=409,
+            detail="This slot was just booked by another user. Choose another slot.",
+        )
+
+    try:
+        c.execute(
+            """INSERT INTO CONSULTATION_BOOKINGS
+               (id, user_id, practitioner_id, slot_id, status,
+                payment_timing, payment_status, fee_amount, currency,
+                created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, 'unpaid', ?, ?, ?, ?)""",
+            (
+                booking_id,
+                user["id"],
+                req.practitioner_id,
+                req.slot_id,
+                booking_status,
+                req.payment_timing,
+                slot[4],
+                slot[5],
+                timestamp,
+                timestamp,
+            ),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        conn.close()
+        raise HTTPException(status_code=409, detail="Could not reserve this slot")
+
+    response = _format_consultation_booking(c, booking_id, user["id"])
+    conn.close()
+    return response
+
+
+@app.get("/consultations/bookings/me")
+def get_my_consultation_bookings(
+    authorization: Optional[str] = Header(None),
+):
+    user = require_user(authorization)
+    conn = connect_db_connection()
+    c = conn.cursor()
+    _release_expired_consultation_holds(c)
+    conn.commit()
+    c.execute(
+        """SELECT b.id FROM CONSULTATION_BOOKINGS b
+           JOIN CONSULTATION_SLOTS s ON s.id=b.slot_id
+           WHERE b.user_id=? ORDER BY s.starts_at DESC""",
+        (user["id"],),
+    )
+    booking_ids = [row[0] for row in c.fetchall()]
+    response = [
+        _format_consultation_booking(c, booking_id, user["id"])
+        for booking_id in booking_ids
+    ]
+    conn.close()
+    return [booking for booking in response if booking is not None]
+
+
+def _sslcommerz_settings():
+    sandbox = os.getenv("SSLCOMMERZ_SANDBOX", "true").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+    store_id = os.getenv("SSLCOMMERZ_STORE_ID", "").strip()
+    store_password = os.getenv("SSLCOMMERZ_STORE_PASSWORD", "").strip()
+    public_base_url = os.getenv(
+        "PUBLIC_API_BASE_URL", "http://127.0.0.1:8000"
+    ).strip().rstrip("/")
+    if sandbox:
+        # New sandbox stores are created on sandbox-gw. SSLCommerz still
+        # documents transaction validation and query APIs on the legacy
+        # sandbox host, so keep the two bases separate.
+        initiation_base = "https://sandbox-gw.sslcommerz.com"
+        validator_base = "https://sandbox.sslcommerz.com"
+    else:
+        initiation_base = validator_base = "https://securepay.sslcommerz.com"
+    configured = bool(
+        store_id
+        and store_password
+        and not store_id.startswith("your_")
+        and not store_password.startswith("your_")
+    )
+    return {
+        "configured": configured,
+        "store_id": store_id,
+        "store_password": store_password,
+        "public_base_url": public_base_url,
+        "init_url": f"{initiation_base}/gwprocess/v4/api.php",
+        "validation_url": (
+            f"{validator_base}/validator/api/validationserverAPI.php"
+        ),
+        "query_url": (
+            f"{validator_base}/validator/api/merchantTransIDvalidationAPI.php"
+        ),
+    }
+
+
+def _sslcommerz_json(url: str, data: Optional[Dict] = None):
+    try:
+        encoded = urlencode(data).encode("utf-8") if data is not None else None
+        request = UrlRequest(
+            url,
+            data=encoded,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        with urlopen(request, timeout=20) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError, ValueError) as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="The payment gateway is unavailable. Please try again.",
+        ) from exc
+
+
+@app.post("/consultations/bookings/{booking_id}/payments")
+def start_consultation_payment(
+    booking_id: str,
+    req: CreateConsultationPaymentRequest,
+    authorization: Optional[str] = Header(None),
+):
+    user = require_user(authorization)
+    phone = re.sub(r"[^0-9+]", "", req.customer_phone)
+    if not re.fullmatch(r"\+?[0-9]{10,15}", phone):
+        raise HTTPException(status_code=422, detail="Enter a valid mobile number")
+
+    settings = _sslcommerz_settings()
+    if not settings["configured"]:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "SSLCOMMERZ is not configured. Add the sandbox store ID and "
+                "password to FastAPI/.env."
+            ),
+        )
+
+    conn = connect_db_connection()
+    c = conn.cursor()
+    _release_expired_consultation_holds(c)
+    conn.commit()
+    booking = _format_consultation_booking(c, booking_id, user["id"])
+    if booking is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Booking not found")
+    if booking["status"] in {"cancelled", "expired"}:
+        conn.close()
+        raise HTTPException(status_code=409, detail="This booking is no longer active")
+    if booking["payment_status"] == "paid":
+        conn.close()
+        raise HTTPException(status_code=409, detail="This booking is already paid")
+
+    c.execute(
+        """SELECT transaction_id, session_key, gateway_url
+           FROM CONSULTATION_PAYMENTS
+           WHERE booking_id=? AND status='pending'
+           ORDER BY created_at DESC LIMIT 1""",
+        (booking_id,),
+    )
+    existing = c.fetchone()
+    if existing is not None and existing[2]:
+        conn.close()
+        return {
+            "booking_id": booking_id,
+            "transaction_id": existing[0],
+            "session_key": existing[1],
+            "checkout_url": existing[2],
+            "provider": "sslcommerz",
+            "status": "pending",
+        }
+
+    transaction_id = f"AM{uuid.uuid4().hex[:26]}"
+    callback_base = settings["public_base_url"]
+    payment_payload = {
+        "store_id": settings["store_id"],
+        "store_passwd": settings["store_password"],
+        "total_amount": f"{booking['fee_amount']:.2f}",
+        "currency": booking["currency"],
+        "tran_id": transaction_id,
+        "success_url": f"{callback_base}/payments/sslcommerz/success",
+        "fail_url": f"{callback_base}/payments/sslcommerz/fail",
+        "cancel_url": f"{callback_base}/payments/sslcommerz/cancel",
+        "ipn_url": f"{callback_base}/payments/sslcommerz/ipn",
+        "cus_name": user["name"],
+        "cus_email": user["email"],
+        "cus_add1": "Dhaka",
+        "cus_city": "Dhaka",
+        "cus_postcode": "1205",
+        "cus_country": "Bangladesh",
+        "cus_phone": phone,
+        "shipping_method": "NO",
+        "product_name": f"Consultation with {booking['practitioner']['name']}",
+        "product_category": "Healthcare",
+        "product_profile": "non-physical-goods",
+        "value_a": booking_id,
+        "value_b": user["id"],
+    }
+    gateway_response = _sslcommerz_json(settings["init_url"], payment_payload)
+    checkout_url = gateway_response.get("GatewayPageURL")
+    session_key = gateway_response.get("sessionkey")
+    if gateway_response.get("status") != "SUCCESS" or not checkout_url:
+        conn.close()
+        raise HTTPException(
+            status_code=502,
+            detail=gateway_response.get("failedreason") or "Payment session failed",
+        )
+
+    payment_id = uuid.uuid4().hex
+    timestamp = now()
+    c.execute(
+        """INSERT INTO CONSULTATION_PAYMENTS
+           (id, booking_id, user_id, provider, method, status,
+            amount, currency, transaction_id, session_key, gateway_url,
+            created_at)
+           VALUES (?, ?, ?, 'sslcommerz', ?, 'pending', ?, ?, ?, ?, ?, ?)""",
+        (
+            payment_id,
+            booking_id,
+            user["id"],
+            req.method,
+            f"{booking['fee_amount']:.2f}",
+            booking["currency"],
+            transaction_id,
+            session_key,
+            checkout_url,
+            timestamp,
+        ),
+    )
+    c.execute(
+        """UPDATE CONSULTATION_BOOKINGS
+           SET payment_status='pending', updated_at=? WHERE id=?""",
+        (timestamp, booking_id),
+    )
+    conn.commit()
+    conn.close()
+    return {
+        "booking_id": booking_id,
+        "transaction_id": transaction_id,
+        "session_key": session_key,
+        "checkout_url": checkout_url,
+        "provider": "sslcommerz",
+        "status": "pending",
+    }
+
+
+def _verified_payment_outcome(conn, transaction_id: str, validation_id: str):
+    c = conn.cursor()
+    c.execute(
+        """SELECT p.id, p.booking_id, p.amount, p.currency, p.status,
+                  b.payment_timing, b.slot_id, p.user_id
+           FROM CONSULTATION_PAYMENTS p
+           JOIN CONSULTATION_BOOKINGS b ON b.id=p.booking_id
+           WHERE p.transaction_id=?""",
+        (transaction_id,),
+    )
+    payment = c.fetchone()
+    if payment is None:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    if payment[4] == "paid":
+        return "paid"
+
+    settings = _sslcommerz_settings()
+    if not settings["configured"]:
+        raise HTTPException(status_code=503, detail="SSLCOMMERZ is not configured")
+    query = urlencode(
+        {
+            "val_id": validation_id,
+            "store_id": settings["store_id"],
+            "store_passwd": settings["store_password"],
+            "format": "json",
+        }
+    )
+    validation = _sslcommerz_json(f"{settings['validation_url']}?{query}")
+    status = str(validation.get("status", "")).upper()
+    if status not in {"VALID", "VALIDATED"}:
+        raise HTTPException(status_code=400, detail="Payment validation failed")
+    if validation.get("tran_id") != transaction_id:
+        raise HTTPException(status_code=400, detail="Payment transaction mismatch")
+
+    try:
+        expected_amount = Decimal(str(payment[2])).quantize(Decimal("0.01"))
+        received_amount = Decimal(str(validation.get("amount"))).quantize(
+            Decimal("0.01")
+        )
+    except (InvalidOperation, TypeError):
+        raise HTTPException(status_code=400, detail="Payment amount is invalid")
+    received_currency = validation.get("currency") or validation.get("currency_type")
+    if received_amount != expected_amount or received_currency != payment[3]:
+        raise HTTPException(status_code=400, detail="Payment amount or currency mismatch")
+
+    timestamp = now()
+    if str(validation.get("risk_level", "0")) == "1":
+        c.execute(
+            """UPDATE CONSULTATION_PAYMENTS
+               SET status='review', validation_id=?, bank_transaction_id=?,
+                   card_type=? WHERE id=?""",
+            (
+                validation_id,
+                validation.get("bank_tran_id"),
+                validation.get("card_type"),
+                payment[0],
+            ),
+        )
+        c.execute(
+            """UPDATE CONSULTATION_BOOKINGS
+               SET payment_status='review', updated_at=? WHERE id=?""",
+            (timestamp, payment[1]),
+        )
+        conn.commit()
+        return "review"
+
+    if payment[5] == "before":
+        # A callback can arrive after the short hold expires. Reclaim the slot
+        # only if it is still free or still belongs to this booking; never
+        # overwrite a slot that another user booked in the meantime.
+        c.execute(
+            """UPDATE CONSULTATION_SLOTS
+               SET status='booked', held_until=NULL,
+                   booked_by_user_id=?, booking_id=?
+               WHERE id=? AND (status='free' OR booking_id=?)""",
+            (payment[7], payment[1], payment[6], payment[1]),
+        )
+        if c.rowcount != 1:
+            c.execute(
+                """UPDATE CONSULTATION_PAYMENTS
+                   SET status='review', validation_id=?,
+                       bank_transaction_id=?, card_type=? WHERE id=?""",
+                (
+                    validation_id,
+                    validation.get("bank_tran_id"),
+                    validation.get("card_type"),
+                    payment[0],
+                ),
+            )
+            c.execute(
+                """UPDATE CONSULTATION_BOOKINGS
+                   SET status='slot_conflict', payment_status='review',
+                       updated_at=? WHERE id=?""",
+                (timestamp, payment[1]),
+            )
+            conn.commit()
+            return "review"
+
+    c.execute(
+        """UPDATE CONSULTATION_PAYMENTS
+           SET status='paid', validation_id=?, bank_transaction_id=?,
+               card_type=?, paid_at=? WHERE id=?""",
+        (
+            validation_id,
+            validation.get("bank_tran_id"),
+            validation.get("card_type"),
+            timestamp,
+            payment[0],
+        ),
+    )
+    c.execute(
+        """UPDATE CONSULTATION_BOOKINGS
+           SET status='confirmed', payment_status='paid', updated_at=?
+           WHERE id=?""",
+        (timestamp, payment[1]),
+    )
+    if payment[5] != "before":
+        c.execute(
+            """UPDATE CONSULTATION_SLOTS
+               SET status='booked', held_until=NULL WHERE booking_id=?""",
+            (payment[1],),
+        )
+    conn.commit()
+    return "paid"
+
+
+def _mark_gateway_payment_terminal(conn, transaction_id: str, status: str):
+    c = conn.cursor()
+    c.execute(
+        """SELECT p.id, p.booking_id, p.status, b.payment_timing
+           FROM CONSULTATION_PAYMENTS p
+           JOIN CONSULTATION_BOOKINGS b ON b.id=p.booking_id
+           WHERE p.transaction_id=?""",
+        (transaction_id,),
+    )
+    payment = c.fetchone()
+    if payment is None or payment[2] == "paid":
+        return
+    timestamp = now()
+    c.execute(
+        "UPDATE CONSULTATION_PAYMENTS SET status=? WHERE id=?",
+        (status, payment[0]),
+    )
+    if payment[3] == "before":
+        c.execute(
+            """UPDATE CONSULTATION_BOOKINGS
+               SET status='cancelled', payment_status='unpaid', updated_at=?
+               WHERE id=?""",
+            (timestamp, payment[1]),
+        )
+        c.execute(
+            """UPDATE CONSULTATION_SLOTS
+               SET status='free', held_until=NULL,
+                   booked_by_user_id=NULL, booking_id=NULL
+               WHERE booking_id=?""",
+            (payment[1],),
+        )
+    else:
+        c.execute(
+            """UPDATE CONSULTATION_BOOKINGS
+               SET payment_status='unpaid', updated_at=? WHERE id=?""",
+            (timestamp, payment[1]),
+        )
+    conn.commit()
+
+
+def _sync_payment_from_gateway(conn, transaction_id: str):
+    c = conn.cursor()
+    c.execute(
+        """SELECT session_key FROM CONSULTATION_PAYMENTS
+           WHERE transaction_id=?""",
+        (transaction_id,),
+    )
+    row = c.fetchone()
+    if row is None or not row[0]:
+        return "unknown"
+    settings = _sslcommerz_settings()
+    if not settings["configured"]:
+        return "pending"
+    query = urlencode(
+        {
+            "sessionkey": row[0],
+            "store_id": settings["store_id"],
+            "store_passwd": settings["store_password"],
+            "format": "json",
+        }
+    )
+    result = _sslcommerz_json(f"{settings['query_url']}?{query}")
+    status = str(result.get("status", "PENDING")).upper()
+    if status in {"VALID", "VALIDATED"} and result.get("val_id"):
+        return _verified_payment_outcome(conn, transaction_id, result["val_id"])
+    if status in {"FAILED", "CANCELLED", "EXPIRED"}:
+        _mark_gateway_payment_terminal(conn, transaction_id, status.lower())
+        return status.lower()
+    return "pending"
+
+
+async def _sslcommerz_callback_data(request: Request):
+    body = (await request.body()).decode("utf-8", errors="replace")
+    return {key: values[-1] for key, values in parse_qs(body).items()}
+
+
+def _payment_result_html(title: str, message: str, success: bool = False):
+    color = "#2e7d32" if success else "#8a4b08"
+    return HTMLResponse(
+        f"""<!doctype html><html><head><meta name=\"viewport\"
+        content=\"width=device-width,initial-scale=1\"></head>
+        <body style=\"font-family:Arial;padding:32px;background:#f7f8fa\">
+        <main style=\"max-width:520px;margin:auto;background:white;padding:28px;
+        border-radius:16px\"><h2 style=\"color:{color}\">{title}</h2>
+        <p>{message}</p><p>You can close this page and return to AuraMind.</p>
+        </main></body></html>"""
+    )
+
+
+@app.post("/payments/sslcommerz/success", response_class=HTMLResponse)
+async def sslcommerz_success(request: Request):
+    payload = await _sslcommerz_callback_data(request)
+    transaction_id = payload.get("tran_id", "")
+    validation_id = payload.get("val_id", "")
+    if not transaction_id or not validation_id:
+        return _payment_result_html(
+            "Payment could not be verified",
+            "The gateway response was incomplete. No booking was confirmed.",
+        )
+    conn = connect_db_connection()
+    try:
+        result = _verified_payment_outcome(conn, transaction_id, validation_id)
+        if result == "paid":
+            return _payment_result_html(
+                "Payment verified",
+                "Your consultation slot is confirmed.",
+                success=True,
+            )
+        return _payment_result_html(
+            "Payment under review",
+            "The gateway marked this payment for a safety review.",
+        )
+    except HTTPException:
+        return _payment_result_html(
+            "Payment could not be verified",
+            "AuraMind did not confirm the slot. Please check your booking status.",
+        )
+    finally:
+        conn.close()
+
+
+@app.post("/payments/sslcommerz/ipn")
+async def sslcommerz_ipn(request: Request):
+    payload = await _sslcommerz_callback_data(request)
+    transaction_id = payload.get("tran_id", "")
+    validation_id = payload.get("val_id", "")
+    if not transaction_id:
+        raise HTTPException(status_code=400, detail="Missing transaction ID")
+    conn = connect_db_connection()
+    try:
+        if validation_id:
+            status = _verified_payment_outcome(conn, transaction_id, validation_id)
+        else:
+            status = _sync_payment_from_gateway(conn, transaction_id)
+        return {"received": True, "status": status}
+    finally:
+        conn.close()
+
+
+@app.post("/payments/sslcommerz/fail", response_class=HTMLResponse)
+async def sslcommerz_fail(request: Request):
+    payload = await _sslcommerz_callback_data(request)
+    transaction_id = payload.get("tran_id", "")
+    if transaction_id:
+        conn = connect_db_connection()
+        try:
+            _sync_payment_from_gateway(conn, transaction_id)
+        except HTTPException:
+            pass
+        finally:
+            conn.close()
+    return _payment_result_html(
+        "Payment not completed",
+        "The slot will only be confirmed after the gateway verifies payment.",
+    )
+
+
+@app.post("/payments/sslcommerz/cancel", response_class=HTMLResponse)
+async def sslcommerz_cancel(request: Request):
+    return await sslcommerz_fail(request)
+
+
+@app.post("/consultations/bookings/{booking_id}/payments/refresh")
+def refresh_consultation_payment(
+    booking_id: str,
+    authorization: Optional[str] = Header(None),
+):
+    user = require_user(authorization)
+    conn = connect_db_connection()
+    c = conn.cursor()
+    booking = _format_consultation_booking(c, booking_id, user["id"])
+    if booking is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Booking not found")
+    if booking["payment"] and booking["payment"]["status"] in {"pending", "review"}:
+        try:
+            _sync_payment_from_gateway(
+                conn, booking["payment"]["transaction_id"]
+            )
+        except HTTPException:
+            pass
+    response = _format_consultation_booking(c, booking_id, user["id"])
     conn.close()
     return response
