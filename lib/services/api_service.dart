@@ -311,7 +311,7 @@ class ApiService {
     );
   }
 
-  Future<void> reportCommunityPost({
+  Future<Map<String, dynamic>> reportCommunityPost({
     required String postId,
     required String reason,
   }) async {
@@ -320,7 +320,7 @@ class ApiService {
       headers: _headers,
       body: jsonEncode({'reason': reason}),
     );
-    await _handleResponse(response);
+    return await _handleResponse(response) as Map<String, dynamic>;
   }
 
   Future<List<CommunityComment>> getCommunityComments({
