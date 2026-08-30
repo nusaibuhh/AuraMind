@@ -1970,6 +1970,17 @@ def report_community_post(
            VALUES (?, ?, ?, ?, ?)""",
         (uuid.uuid4().hex, post_id, user["id"], reason, now()),
     )
+
+    c.execute(
+        """SELECT COUNT(*) FROM COMMUNITY_REPORTS WHERE post_id=?""",
+        (post_id,),
+    )
+    report_count = c.fetchone()[0]
+    if report_count >= 3:
+        c.execute(
+            "UPDATE COMMUNITY_POSTS SET is_hidden=1 WHERE id=?",
+            (post_id,),
+        )
     conn.commit()
     conn.close()
     return {
