@@ -36,6 +36,7 @@ from pymysql.err import IntegrityError
 from dotenv import load_dotenv
 
 from risk_detector import scan_and_alert_emergency_contact
+from moderation_detector import analyze_content
 
 app = FastAPI(title="AuraMind API")
 load_dotenv(Path(__file__).resolve().parent / ".env")
@@ -268,6 +269,18 @@ def connect_db():
         reporter_user_id TEXT NOT NULL,
         reason TEXT,
         created_at TEXT NOT NULL
+    )""")
+
+    # Module 3: AI Content Moderation Queue
+    c.execute("""CREATE TABLE IF NOT EXISTS COMMUNITY_MODERATION_QUEUE (
+        id VARCHAR(64) PRIMARY KEY,
+        post_id VARCHAR(64) NOT NULL,
+        content TEXT NOT NULL,
+        category TEXT NOT NULL,
+        confidence FLOAT DEFAULT 0,
+        status VARCHAR(32) DEFAULT 'pending',
+        created_at TEXT NOT NULL,
+        reviewed_at TEXT
     )""")
 
     # Journal & Notes entries
@@ -1867,17 +1880,39 @@ def create_community_post(
     if len(cleaned) < 2:
         raise HTTPException(status_code=400, detail="Post is too short")
 
+    moderation_result = analyze_content(cleaned)
+    is_hidden = 1 if moderation_result["flagged"] else 0
     post_id = uuid.uuid4().hex
     created_at = now()
 
     conn = connect_db_connection()
     c = conn.cursor()
+
+    
+
     c.execute(
         """INSERT INTO COMMUNITY_POSTS
            (id, user_id, body, created_at, is_hidden)
-           VALUES (?, ?, ?, ?, 0)""",
-        (post_id, user["id"], cleaned, created_at),
+           VALUES (?, ?, ?, ?, ?)""",
+        (post_id, user["id"], cleaned, created_at, is_hidden),
     )
+
+    if moderation_result["flagged"]:
+        c.execute(
+            """INSERT INTO COMMUNITY_MODERATION_QUEUE
+               (id, post_id, content, category, confidence, status, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                uuid.uuid4().hex,
+                post_id,
+                cleaned,
+                moderation_result["category"],
+                moderation_result["confidence"],
+                "pending",
+                created_at,
+            ),
+        )
+
     conn.commit()
     conn.close()
 
@@ -1935,6 +1970,17 @@ def report_community_post(
            VALUES (?, ?, ?, ?, ?)""",
         (uuid.uuid4().hex, post_id, user["id"], reason, now()),
     )
+
+    c.execute(
+        """SELECT COUNT(*) FROM COMMUNITY_REPORTS WHERE post_id=?""",
+        (post_id,),
+    )
+    report_count = c.fetchone()[0]
+    if report_count >= 3:
+        c.execute(
+            "UPDATE COMMUNITY_POSTS SET is_hidden=1 WHERE id=?",
+            (post_id,),
+        )
     conn.commit()
     conn.close()
     return {

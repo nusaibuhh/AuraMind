@@ -206,10 +206,15 @@ class _CommunityForumScreenState extends State<CommunityForumScreen> {
     if (confirmed != true) return;
 
     try {
-      await _api.reportCommunityPost(postId: post.id, reason: reason);
+      final result =
+          await _api.reportCommunityPost(postId: post.id, reason: reason);
       if (!mounted) return;
+
+      final message = result['already_reported'] == true
+          ? 'You have already reported this post.'
+          : 'Report submitted for review.';
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Report submitted for review.')),
+        SnackBar(content: Text(message)),
       );
     } on ApiException catch (e) {
       if (!mounted) return;
