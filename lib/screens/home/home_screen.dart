@@ -19,6 +19,8 @@ import '../best_self/best_self_canvas_screen.dart';
 import '../exercises/exercises_screen.dart';
 import '../journal/journal_screen.dart';
 import '../profile/profile_screen.dart';
+import '../kindness/kindness_wheel_screen.dart';
+import '../consultations/practitioner_finder_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -72,9 +74,12 @@ class _HomeScreenState extends State<HomeScreen> {
     final bestSelf = (title: 'Best Possible\nSelf', subtitle: 'Future vision', icon: Icons.auto_awesome_rounded, color: const Color(0xFFD39B42), onTap: _openBestPossibleSelf);
     final walk = (title: 'Mood Momentum\nWalk', subtitle: '5–10 minutes', icon: Icons.directions_walk_rounded, color: const Color(0xFF507C67), onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MoodMomentumWalkScreen())));
     final relaxation = (title: 'Muscle\nRelaxation', subtitle: 'Release tension', icon: Icons.self_improvement_rounded, color: const Color(0xFF694A70), onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MuscleRelaxationScreen())));
+    // Module 3 tools are intentionally not returned here. This list is shown
+    // under the heading "Recommended exercises", while the Kindness Wheel
+    // and Practitioner Finder are wellbeing/support tools rather than exercises.
     return switch (category) {
-      MentalHealthCategory.depression => [walk, grounding, bestSelf],
-      MentalHealthCategory.anxiety || MentalHealthCategory.stress => [grounding, breathing, relaxation],
+      MentalHealthCategory.depression => [walk, grounding, breathing],
+      MentalHealthCategory.anxiety || MentalHealthCategory.stress => [grounding, relaxation, breathing],
       MentalHealthCategory.normal => [bestSelf, grounding, breathing],
     };
   }
@@ -158,6 +163,47 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                             if (i < recommended.length - 1) const SizedBox(width: 12),
                           ],
+                        ],
+                      ),
+                      const SizedBox(height: 22),
+                      const _SectionTitle(
+                        title: 'Wellbeing tools & support',
+                        subtitle: 'Explore planning and professional-care support',
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _RecommendationTile(
+                              background: const Color(0xFFD16A7A).withValues(alpha: .17),
+                              icon: Icons.favorite_rounded,
+                              iconColor: const Color(0xFFD16A7A),
+                              title: 'Kindness\nWheel',
+                              subtitle: 'One small act',
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const KindnessWheelScreen(),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _RecommendationTile(
+                              background: const Color(0xFF3F7FA3).withValues(alpha: .17),
+                              icon: Icons.location_searching_rounded,
+                              iconColor: const Color(0xFF3F7FA3),
+                              title: 'Practitioner\nFinder',
+                              subtitle: 'Psychiatrists near me',
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const PractitionerFinderScreen(),
+                                ),
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     ],
