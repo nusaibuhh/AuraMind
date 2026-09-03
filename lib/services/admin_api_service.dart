@@ -13,11 +13,13 @@ class AdminApiService {
         if (_token != null) 'Authorization': 'Bearer $_token',
       };
 
-  Future<Map<String, dynamic>> login(String email, String password) async {
+  Future<Map<String, dynamic>> login(
+      String email, String password, String studentId) async {
     final response = await _client.post(
       Uri.parse('${ApiConfig.baseUrl}/admin/login'),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'email': email, 'password': password}),
+      body: jsonEncode(
+          {'email': email, 'password': password, 'student_id': studentId}),
     );
     final data = _decode(response);
     _token = data['access_token'] as String;
@@ -40,6 +42,23 @@ class AdminApiService {
     _decode(response);
   }
 
+  Future<void> deleteReportedPost(String postId) async {
+    final response = await _client.delete(
+      Uri.parse('${ApiConfig.baseUrl}/admin/community/posts/$postId'),
+      headers: _headers,
+    );
+    _decode(response);
+  }
+
+  Future<void> createPractitioner(Map<String, dynamic> practitioner) async {
+    final response = await _client.post(
+      Uri.parse('${ApiConfig.baseUrl}/admin/practitioners'),
+      headers: _headers,
+      body: jsonEncode(practitioner),
+    );
+    _decode(response);
+  }
+
   Future<void> moderationAction(String id, String status) async {
     final response = await _client.patch(
       Uri.parse('${ApiConfig.baseUrl}/admin/moderation/$id'),
@@ -58,7 +77,8 @@ class AdminApiService {
     _decode(response);
   }
 
-  Future<void> updatePolicy(String category, bool enabled, double threshold) async {
+  Future<void> updatePolicy(
+      String category, bool enabled, double threshold) async {
     final response = await _client.put(
       Uri.parse('${ApiConfig.baseUrl}/admin/moderation-policies/$category'),
       headers: _headers,
@@ -95,6 +115,8 @@ class AdminApiService {
       return Map<String, dynamic>.from(body as Map);
     }
     final detail = body is Map ? body['detail'] : null;
-    throw Exception(detail is String ? detail : 'Admin request failed (${response.statusCode})');
+    throw Exception(detail is String
+        ? detail
+        : 'Admin request failed (${response.statusCode})');
   }
 }

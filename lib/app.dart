@@ -163,7 +163,7 @@ class _AppRouterState extends State<_AppRouter> {
       return const LoginScreen();
     }
 
-    if (themeProvider.isLoading) {
+    if (themeProvider.isLoading || _loadedUserId != auth.user?.id) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       );

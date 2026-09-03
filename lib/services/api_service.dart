@@ -75,11 +75,17 @@ class ApiService {
     required String name,
     required String email,
     required String password,
+    required String emergencyContact,
   }) async {
     final response = await _client.post(
       Uri.parse('${ApiConfig.baseUrl}/auth/signup'),
       headers: _headers,
-      body: jsonEncode({'name': name, 'email': email, 'password': password}),
+      body: jsonEncode({
+        'name': name,
+        'email': email,
+        'password': password,
+        'emergency_contact': emergencyContact,
+      }),
     );
     final data = await _handleResponse(response);
     _token = data['access_token'] as String;
@@ -139,6 +145,15 @@ class ApiService {
         .toList();
 
     return (result: result, palettes: palettes);
+  }
+
+  Future<bool> hasRecentCheckin() async {
+    final response = await _client.get(
+      Uri.parse('${ApiConfig.baseUrl}/checkin/status'),
+      headers: _headers,
+    );
+    final data = await _handleResponse(response) as Map<String, dynamic>;
+    return data['completed_within_24_hours'] == true;
   }
 
   Future<MoodAnalytics> getMoodAnalytics({int days = 7}) async {
@@ -252,6 +267,21 @@ class ApiService {
     );
   }
 
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final response = await _client.post(
+      Uri.parse('${ApiConfig.baseUrl}/profile/change-password'),
+      headers: _headers,
+      body: jsonEncode({
+        'current_password': currentPassword,
+        'new_password': newPassword,
+      }),
+    );
+    await _handleResponse(response);
+  }
+
   MentalHealthCategory _parseCategory(String value) {
     switch (value) {
       case 'depression':
@@ -299,16 +329,14 @@ class ApiService {
         .toList();
   }
 
-  Future<CommunityPost> createCommunityPost(String content) async {
+  Future<Map<String, dynamic>> createCommunityPost(String content) async {
     final response = await _client.post(
       Uri.parse('${ApiConfig.baseUrl}/community/posts'),
       headers: _headers,
       body: jsonEncode({'content': content}),
     );
     final result = await _handleResponse(response);
-    return CommunityPost.fromJson(
-      Map<String, dynamic>.from(result as Map),
-    );
+    return Map<String, dynamic>.from(result as Map);
   }
 
   Future<Map<String, dynamic>> reportCommunityPost({
@@ -787,6 +815,114 @@ class ApiService {
     return ConsultationBooking.fromJson(
       Map<String, dynamic>.from(result as Map),
     );
+  }
+
+  Future<Map<String, dynamic>> practitionerLogin({
+    required String email,
+    required String password,
+    required String licenseNumber,
+  }) async {
+    final response = await _client.post(
+      Uri.parse('${ApiConfig.baseUrl}/practitioner/login'),
+      headers: _headers,
+      body: jsonEncode({
+        'email': email,
+        'password': password,
+        'license_number': licenseNumber,
+      }),
+    );
+    final data = await _handleResponse(response) as Map<String, dynamic>;
+    _token = data['access_token'] as String;
+    return data;
+  }
+
+  Future<void> practitionerChangePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final response = await _client.post(
+      Uri.parse('${ApiConfig.baseUrl}/practitioner/password'),
+      headers: _headers,
+      body: jsonEncode({
+        'current_password': currentPassword,
+        'new_password': newPassword,
+      }),
+    );
+    await _handleResponse(response);
+  }
+
+  Future<void> updatePractitionerProfile({
+    required int consultationMinutes,
+    required double feeAmount,
+    required String chamber,
+    String? contactNo,
+    String? qualifications,
+    String? specialty,
+  }) async {
+    final response = await _client.put(
+      Uri.parse('${ApiConfig.baseUrl}/practitioner/profile'),
+      headers: _headers,
+      body: jsonEncode({
+        'consultation_minutes': consultationMinutes,
+        'fee_amount': feeAmount,
+        'chamber': chamber,
+        if (contactNo != null) 'contact_no': contactNo,
+        if (qualifications != null) 'qualifications': qualifications,
+        if (specialty != null) 'specialty': specialty,
+      }),
+    );
+    await _handleResponse(response);
+  }
+
+  Future<Map<String, dynamic>> getPractitionerProfile() async {
+    final response = await _client.get(
+      Uri.parse('${ApiConfig.baseUrl}/practitioner/profile'),
+      headers: _headers,
+    );
+    return Map<String, dynamic>.from(await _handleResponse(response) as Map);
+  }
+
+  Future<void> addPractitionerSlot({
+    required DateTime startsAt,
+    required DateTime endsAt,
+  }) async {
+    final response = await _client.post(
+      Uri.parse('${ApiConfig.baseUrl}/practitioner/slots'),
+      headers: _headers,
+      body: jsonEncode({
+        'starts_at': startsAt.toIso8601String(),
+        'ends_at': endsAt.toIso8601String(),
+      }),
+    );
+    await _handleResponse(response);
+  }
+
+  Future<List<Map<String, dynamic>>> getPractitionerBookings() async {
+    final response = await _client.get(
+      Uri.parse('${ApiConfig.baseUrl}/practitioner/bookings'),
+      headers: _headers,
+    );
+    final data = await _handleResponse(response) as List;
+    return data.map((item) => Map<String, dynamic>.from(item as Map)).toList();
+  }
+
+  Future<List<Map<String, dynamic>>> getPractitionerSlots() async {
+    final response = await _client.get(
+      Uri.parse('${ApiConfig.baseUrl}/practitioner/slots'),
+      headers: _headers,
+    );
+    final data = await _handleResponse(response) as List;
+    return data.map((item) => Map<String, dynamic>.from(item as Map)).toList();
+  }
+
+    Future<void> practitionerBookingAction(
+      String bookingId, String action) async {
+    final response = await _client.patch(
+      Uri.parse('${ApiConfig.baseUrl}/practitioner/bookings/$bookingId'),
+      headers: _headers,
+      body: jsonEncode({'action': action}),
+    );
+    await _handleResponse(response);
   }
 
   Future<Map<String, dynamic>> getKindnessSummary() async {

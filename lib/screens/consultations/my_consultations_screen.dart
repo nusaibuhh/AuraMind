@@ -204,6 +204,10 @@ class _BookingCard extends StatelessWidget {
 }
 
 String _statusLabel(ConsultationBooking booking) {
+  if (booking.status == 'completed') return 'Appointment completed';
+  if (booking.status == 'confirmed') {
+    return booking.isPaid ? 'Paid' : 'Appointment accepted';
+  }
   if (booking.status == 'pending_payment') return 'Awaiting payment';
   if (booking.status == 'expired') return 'Expired';
   if (booking.status == 'cancelled') return 'Cancelled';

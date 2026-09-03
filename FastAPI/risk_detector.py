@@ -4,7 +4,7 @@ import logging
 from typing import Optional, Tuple
 import numpy as np
 
-from email_service import send_emergency_checkin_email
+from email_service import send_emergency_checkin_email, send_practitioner_suicide_alert_email
 
 logger = logging.getLogger("auramind.risk_detector")
 
@@ -188,7 +188,7 @@ def scan_and_alert_emergency_contact(
             conn = connect_fn()
             c = conn.cursor()
             c.execute(
-                "SELECT name, emergency_contact FROM USERS WHERE id=?",
+                "SELECT name, email, emergency_contact FROM USERS WHERE id=?",
                 (user_id,),
             )
             row = c.fetchone()
@@ -196,7 +196,8 @@ def scan_and_alert_emergency_contact(
 
             if row:
                 user_name = row[0] or "your friend"
-                emergency_contact = (row[1] or "").strip()
+                user_email = row[1] or ""
+                emergency_contact = (row[2] or "").strip()
                 print(f"[Emergency Contact] Retrieved contact for {user_name}: '{emergency_contact}'")
                 if emergency_contact and "@" in emergency_contact:
                     print(f"[Emergency Alert] Risk detected! Dispatching email to {emergency_contact}...")
@@ -206,6 +207,19 @@ def scan_and_alert_emergency_contact(
                     )
                 else:
                     print(f"[Emergency Contact] User {user_id} has no valid emergency contact email configured.")
+                try:
+                    practitioner_conn = connect_fn()
+                    c = practitioner_conn.cursor()
+                    c.execute("""SELECT DISTINCT p.email FROM CONSULTATION_BOOKINGS b
+                                 JOIN CONSULTATION_PRACTITIONERS p ON p.id=b.practitioner_id
+                                 WHERE b.user_id=? AND b.status IN ('confirmed', 'pending_payment')
+                                   AND p.is_active=1 AND p.email IS NOT NULL""", (user_id,))
+                    practitioner_emails = [item[0] for item in c.fetchall() if item[0]]
+                    practitioner_conn.close()
+                    for practitioner_email in practitioner_emails:
+                        send_practitioner_suicide_alert_email(practitioner_email, user_name, user_email)
+                except Exception as practitioner_error:
+                    logger.warning("Practitioner safety notification skipped: %s", practitioner_error)
             else:
                 print(f"[Emergency Contact] User {user_id} not found in database.")
         else:

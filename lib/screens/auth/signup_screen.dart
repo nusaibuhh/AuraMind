@@ -15,6 +15,7 @@ class _SignupScreenState extends State<SignupScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
+  final _emergencyController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   bool _obscurePassword = true;
@@ -25,6 +26,7 @@ class _SignupScreenState extends State<SignupScreen> {
   void dispose() {
     _nameController.dispose();
     _emailController.dispose();
+    _emergencyController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
@@ -39,6 +41,7 @@ class _SignupScreenState extends State<SignupScreen> {
           name: _nameController.text,
           email: _emailController.text,
           password: _passwordController.text,
+          emergencyContact: _emergencyController.text,
         );
 
     if (!mounted) return;
@@ -103,6 +106,26 @@ class _SignupScreenState extends State<SignupScreen> {
                   validator: (value) {
                     if (value == null || value.trim().isEmpty) {
                       return 'Please enter your name';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _emergencyController,
+                  keyboardType: TextInputType.emailAddress,
+                  textInputAction: TextInputAction.next,
+                  decoration: const InputDecoration(
+                    labelText: 'Emergency contact email',
+                    prefixIcon: Icon(Icons.contact_emergency_outlined),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Please enter an emergency contact email';
+                    }
+                    if (!RegExp(r'^[^@]+@[^@]+\.[^@]+$')
+                        .hasMatch(value.trim())) {
+                      return 'Please enter a valid email';
                     }
                     return null;
                   },

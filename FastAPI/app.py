@@ -41,6 +41,10 @@ from moderation_detector import analyze_content
 app = FastAPI(title="AuraMind API")
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
+
+def now():
+    return datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+
 MYSQL_CONFIG = {
     "host": os.getenv("MYSQL_HOST", "localhost"),
     "port": int(os.getenv("MYSQL_PORT", "3306")),
@@ -300,6 +304,13 @@ def connect_db():
         created_at TEXT NOT NULL,
         reviewed_at TEXT
     )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS COMMUNITY_POST_MODERATION_LOG (
+        id VARCHAR(64) PRIMARY KEY,
+        post_id VARCHAR(64) NOT NULL,
+        action VARCHAR(32) NOT NULL,
+        reason VARCHAR(255) NOT NULL,
+        created_at TEXT NOT NULL
+    )""")
 
     c.execute("""CREATE TABLE IF NOT EXISTS ADMIN_TOKENS (
         token VARCHAR(128) PRIMARY KEY,
@@ -464,6 +475,11 @@ def connect_db():
         is_demo INTEGER NOT NULL DEFAULT 1,
         is_active INTEGER NOT NULL DEFAULT 1
     )""")
+    _ensure_column(c, "CONSULTATION_PRACTITIONERS", "email", "VARCHAR(255)")
+    _ensure_column(c, "CONSULTATION_PRACTITIONERS", "license_number", "VARCHAR(100)")
+    _ensure_column(c, "CONSULTATION_PRACTITIONERS", "password", "TEXT")
+    _ensure_column(c, "CONSULTATION_PRACTITIONERS", "must_change_password", "INTEGER NOT NULL DEFAULT 0")
+    _ensure_column(c, "CONSULTATION_PRACTITIONERS", "auth_token", "VARCHAR(128)")
 
     c.execute("""CREATE TABLE IF NOT EXISTS CONSULTATION_SLOTS (
         id VARCHAR(64) PRIMARY KEY,
@@ -749,10 +765,6 @@ except Exception as e:
     print(f"Database initialization deferred or failed: {e}")
 
 
-def now():
-    return datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
-
-
 def _utc_naive(value: datetime) -> datetime:
     """Normalize an aware or naive datetime to AuraMind's UTC-naive format."""
     if value.tzinfo is None:
@@ -791,6 +803,7 @@ class SignupRequest(BaseModel):
     name: str
     email: str
     password: str
+    emergency_contact: Optional[str] = None
 
 
 class LoginRequest(BaseModel):
@@ -801,6 +814,20 @@ class LoginRequest(BaseModel):
 class AdminLoginRequest(BaseModel):
     email: str
     password: str
+    student_id: Optional[str] = None
+
+
+class AdminPractitionerCreateRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=200)
+    email: str = Field(min_length=5, max_length=255)
+    otp: str = Field(min_length=4, max_length=128)
+    license_number: str = Field(min_length=2, max_length=100)
+    qualifications: str = Field(default="Licensed psychiatrist", max_length=500)
+    specialty: str = Field(default="Mental health care", max_length=500)
+    consultation_minutes: int = Field(default=30, ge=15, le=180)
+    contact_no: str = Field(default="To be updated", max_length=100)
+    chamber: str = Field(default="To be updated", max_length=500)
+    fee_amount: Decimal = Field(default=0, ge=0, max_digits=10, decimal_places=2)
 
 
 class NearbyPractitionerRequest(BaseModel):
@@ -835,6 +862,35 @@ class AdminSettingRequest(BaseModel):
     value: str
 
 
+class PractitionerLoginRequest(BaseModel):
+    email: str
+    password: str
+    license_number: str
+
+
+class PractitionerPasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=6)
+
+
+class PractitionerProfileRequest(BaseModel):
+    consultation_minutes: int = Field(ge=15, le=180)
+    fee_amount: Decimal = Field(ge=0, max_digits=10, decimal_places=2)
+    chamber: str = Field(min_length=2, max_length=500)
+    contact_no: Optional[str] = Field(default=None, max_length=100)
+    qualifications: Optional[str] = Field(default=None, max_length=500)
+    specialty: Optional[str] = Field(default=None, max_length=500)
+
+
+class PractitionerSlotRequest(BaseModel):
+    starts_at: datetime
+    ends_at: datetime
+
+
+class PractitionerBookingActionRequest(BaseModel):
+    action: Literal["accept", "decline", "accept_cash", "completed"]
+
+
 class KindnessCompletionRequest(BaseModel):
     task_key: str = Field(min_length=1, max_length=64)
     task_text: str = Field(min_length=1, max_length=1000)
@@ -852,7 +908,12 @@ class SelectThemeRequest(BaseModel):
 class UpdateProfileRequest(BaseModel):
     name: str
     email: str
-    emergency_contact: Optional[str] = None
+    emergency_contact: str
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=6)
 
 
 class SaveBestSelfVisionRequest(BaseModel):
@@ -1178,9 +1239,12 @@ out center tags;"""
 
 def _admin_credentials():
     return (
-        os.getenv("ADMIN_EMAIL", "admin@auramind.local").strip().lower(),
-        os.getenv("ADMIN_PASSWORD", "Admin@1234"),
+        os.getenv("ADMIN_EMAIL", "admin@test.com").strip().lower(),
+        os.getenv("ADMIN_PASSWORD", "admin123#"),
     )
+
+
+VALID_ADMIN_STUDENT_IDS = {"22201883", "22299214", "22299157", "22299096"}
 
 
 def _require_admin(auth_header: Optional[str]):
@@ -1205,6 +1269,8 @@ def _require_admin(auth_header: Optional[str]):
 def admin_login(req: AdminLoginRequest):
     email = req.email.strip().lower()
     password = req.password
+    if email == "admin@test.com" and password == "admin123#" and req.student_id not in VALID_ADMIN_STUDENT_IDS:
+        raise HTTPException(status_code=401, detail="Invalid administrator student ID")
     conn = connect_db_connection(); c = conn.cursor()
     c.execute("SELECT password, is_active FROM ADMIN_ACCOUNTS WHERE email=?", (email,))
     row = c.fetchone()
@@ -1276,8 +1342,20 @@ def admin_dashboard(authorization: Optional[str] = Header(None)):
 
     c.execute("""SELECT r.id, r.post_id, r.reason, r.created_at
                  FROM COMMUNITY_REPORTS r ORDER BY r.created_at DESC LIMIT 50""")
-    reports = [{"id":r[0], "post_id":r[1], "reason":r[2] or "Community report",
-                "created_at":r[3]} for r in c.fetchall()]
+    reports = []
+    for r in c.fetchall():
+        c.execute("SELECT body, is_hidden FROM COMMUNITY_POSTS WHERE id=?", (r[1],))
+        post = c.fetchone()
+        reports.append({"id": r[0], "post_id": r[1],
+                        "reason": r[2] or "Community report", "created_at": r[3],
+                        "post_content": post[0] if post else "Post deleted",
+                        "post_hidden": bool(post[1]) if post else True})
+
+    c.execute("""SELECT post_id, action, reason, created_at
+                 FROM COMMUNITY_POST_MODERATION_LOG
+                 ORDER BY created_at DESC LIMIT 100""")
+    deleted_posts = [{"post_id": r[0], "action": r[1], "reason": r[2],
+                      "created_at": r[3]} for r in c.fetchall()]
     # Safety-review access: public forum views remain anonymous, but an authorized
     # administrator can identify the author of *reported* content to investigate
     # credible bullying or harm reports and remove the content when necessary.
@@ -1311,7 +1389,8 @@ def admin_dashboard(authorization: Optional[str] = Header(None)):
     conn.close()
     return {"privacy_note":"Community remains anonymous to regular users. Authorized administrators can view the identity of authors only for reported content during safety and moderation review.",
             "counts":counts,"moderation_queue":moderation,
-            "reports":reports,"comment_reports":comment_reports,
+            "reports":reports,"deleted_posts":deleted_posts,
+            "comment_reports":comment_reports,
             "practitioner_queue":practitioner_queue,"moderation_policies":policies,
             "system_settings":settings}
 
@@ -1359,6 +1438,36 @@ def admin_moderation_action(queue_id: str, req: AdminModerationActionRequest,
     return {"success":True,"status":status}
 
 
+@app.delete("/admin/community/posts/{post_id}")
+def admin_delete_reported_post(
+    post_id: str,
+    authorization: Optional[str] = Header(None),
+):
+    _require_admin(authorization)
+    conn = connect_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT id FROM COMMUNITY_POSTS WHERE id=?", (post_id,))
+    if c.fetchone() is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Community post not found")
+    timestamp = now()
+    c.execute("DELETE FROM COMMUNITY_REPORTS WHERE post_id=?", (post_id,))
+    c.execute("DELETE FROM COMMUNITY_MODERATION_QUEUE WHERE post_id=?", (post_id,))
+    c.execute("""DELETE FROM COMMUNITY_COMMENT_REPORTS
+                 WHERE comment_id IN (SELECT id FROM COMMUNITY_COMMENTS WHERE post_id=?)""", (post_id,))
+    c.execute("DELETE FROM COMMUNITY_COMMENTS WHERE post_id=?", (post_id,))
+    c.execute("DELETE FROM COMMUNITY_POSTS WHERE id=?", (post_id,))
+    c.execute(
+        """INSERT INTO COMMUNITY_POST_MODERATION_LOG
+           (id, post_id, action, reason, created_at)
+           VALUES (?, ?, 'deleted', 'Deleted by administrator after community report', ?)""",
+        (uuid.uuid4().hex, post_id, timestamp),
+    )
+    conn.commit()
+    conn.close()
+    return {"success": True, "deleted_post_id": post_id}
+
+
 @app.patch("/admin/practitioners/{registration_id}")
 def admin_practitioner_action(registration_id: str, req: AdminPractitionerActionRequest,
                               authorization: Optional[str] = Header(None)):
@@ -1382,6 +1491,232 @@ def admin_practitioner_action(registration_id: str, req: AdminPractitionerAction
                 (public_id,row[1],row[2],row[3],row[4],row[5]))
     conn.commit(); conn.close()
     return {"success":True,"status":req.status}
+
+
+@app.post("/admin/practitioners")
+def admin_create_practitioner(
+    req: AdminPractitionerCreateRequest,
+    authorization: Optional[str] = Header(None),
+):
+    _require_admin(authorization)
+    conn = connect_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT id FROM CONSULTATION_PRACTITIONERS WHERE LOWER(email)=?", (req.email.strip().lower(),))
+    if c.fetchone() is not None:
+        conn.close()
+        raise HTTPException(status_code=400, detail="A practitioner with this email already exists")
+    practitioner_id = f"admin_{uuid.uuid4().hex}"
+    c.execute(
+        """INSERT INTO CONSULTATION_PRACTITIONERS
+           (id, name, qualifications, specialty, consultation_minutes,
+            contact_no, chamber, fee_amount, currency, is_demo, is_active,
+            email, license_number, password, must_change_password)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'BDT', 0, 1, ?, ?, ?, 1)""",
+        (practitioner_id, req.name.strip(), req.qualifications.strip(),
+         req.specialty.strip(), req.consultation_minutes, req.contact_no.strip(),
+         req.chamber.strip(), req.fee_amount, req.email.strip().lower(),
+         req.license_number.strip(), req.otp),
+    )
+    dhaka = timezone(timedelta(hours=6))
+    local_now = datetime.now(dhaka)
+    for day_offset in range(14):
+        local_day = (local_now + timedelta(days=day_offset)).date()
+        for hour, minute in ((10, 0), (13, 0), (16, 0)):
+            starts_at = datetime(local_day.year, local_day.month, local_day.day,
+                                 hour, minute, tzinfo=dhaka)
+            if starts_at <= local_now + timedelta(minutes=30):
+                continue
+            ends_at = starts_at + timedelta(minutes=req.consultation_minutes)
+            slot_id = uuid.uuid5(uuid.NAMESPACE_URL, f"{practitioner_id}:{starts_at.isoformat()}").hex
+            c.execute(
+                """INSERT IGNORE INTO CONSULTATION_SLOTS
+                   (id, practitioner_id, starts_at, ends_at, status)
+                   VALUES (?, ?, ?, ?, 'free')""",
+                (slot_id, practitioner_id, starts_at.isoformat(), ends_at.isoformat()),
+            )
+    conn.commit()
+    conn.close()
+    return {"success": True, "practitioner_id": practitioner_id}
+
+
+def _require_practitioner(auth_header: Optional[str]):
+    token = _extract_token(auth_header)
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing practitioner authorization")
+    conn = connect_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT id, name, email, must_change_password FROM CONSULTATION_PRACTITIONERS WHERE auth_token=? AND is_active=1", (token,))
+    row = c.fetchone()
+    conn.close()
+    if row is None:
+        raise HTTPException(status_code=401, detail="Invalid practitioner session")
+    return {"id": row[0], "name": row[1], "email": row[2], "must_change_password": bool(row[3])}
+
+
+@app.post("/practitioner/login")
+def practitioner_login(req: PractitionerLoginRequest):
+    conn = connect_db_connection()
+    c = conn.cursor()
+    c.execute("""SELECT id, name, email, password, license_number, must_change_password
+                 FROM CONSULTATION_PRACTITIONERS WHERE LOWER(email)=? AND is_active=1""",
+              (req.email.strip().lower(),))
+    row = c.fetchone()
+    if row is None or row[3] != req.password or row[4] != req.license_number.strip():
+        conn.close()
+        raise HTTPException(status_code=401, detail="Invalid practitioner credentials or license number")
+    token = uuid.uuid4().hex
+    c.execute("UPDATE CONSULTATION_PRACTITIONERS SET auth_token=? WHERE id=?", (token, row[0]))
+    conn.commit()
+    conn.close()
+    return {"access_token": token, "practitioner_id": row[0], "name": row[1],
+            "email": row[2], "must_change_password": bool(row[5])}
+
+
+@app.post("/practitioner/password")
+def practitioner_change_password(req: PractitionerPasswordRequest, authorization: Optional[str] = Header(None)):
+    practitioner = _require_practitioner(authorization)
+    if req.new_password == req.current_password:
+        raise HTTPException(status_code=400, detail="New password must be different")
+    conn = connect_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT password FROM CONSULTATION_PRACTITIONERS WHERE id=?", (practitioner["id"],))
+    row = c.fetchone()
+    if row is None or row[0] != req.current_password:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    c.execute("UPDATE CONSULTATION_PRACTITIONERS SET password=?, must_change_password=0 WHERE id=?", (req.new_password, practitioner["id"]))
+    conn.commit()
+    conn.close()
+    return {"success": True}
+
+
+@app.put("/practitioner/profile")
+def practitioner_update_profile(req: PractitionerProfileRequest, authorization: Optional[str] = Header(None)):
+    practitioner = _require_practitioner(authorization)
+    conn = connect_db_connection()
+    c = conn.cursor()
+    c.execute("""UPDATE CONSULTATION_PRACTITIONERS
+                 SET consultation_minutes=?, fee_amount=?, chamber=?,
+                     contact_no=COALESCE(?, contact_no),
+                     qualifications=COALESCE(?, qualifications),
+                     specialty=COALESCE(?, specialty)
+                 WHERE id=?""",
+              (req.consultation_minutes, req.fee_amount, req.chamber.strip(),
+               req.contact_no.strip() if req.contact_no else None,
+               req.qualifications.strip() if req.qualifications else None,
+               req.specialty.strip() if req.specialty else None,
+               practitioner["id"]))
+    conn.commit()
+    conn.close()
+    return {"success": True}
+
+
+@app.get("/practitioner/profile")
+def practitioner_profile(authorization: Optional[str] = Header(None)):
+    practitioner = _require_practitioner(authorization)
+    conn = connect_db_connection()
+    c = conn.cursor()
+    c.execute("""SELECT id, name, email, license_number, qualifications, specialty,
+                        consultation_minutes, contact_no, chamber, fee_amount
+                 FROM CONSULTATION_PRACTITIONERS WHERE id=?""", (practitioner["id"],))
+    row = c.fetchone()
+    conn.close()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Practitioner profile not found")
+    return {"id": row[0], "name": row[1], "email": row[2], "license_number": row[3],
+            "qualifications": row[4], "specialty": row[5],
+            "consultation_minutes": row[6], "contact_no": row[7],
+            "chamber": row[8], "fee_amount": _consultation_money(row[9])}
+
+
+@app.post("/practitioner/slots")
+def practitioner_add_slot(req: PractitionerSlotRequest, authorization: Optional[str] = Header(None)):
+    practitioner = _require_practitioner(authorization)
+    if req.ends_at <= req.starts_at:
+        raise HTTPException(status_code=400, detail="Slot end must be after slot start")
+    conn = connect_db_connection()
+    c = conn.cursor()
+    slot_id = uuid.uuid4().hex
+    c.execute("""SELECT id FROM CONSULTATION_SLOTS
+                 WHERE practitioner_id=? AND status <> 'cancelled'
+                 AND starts_at < ? AND ends_at > ?""",
+              (practitioner["id"], req.ends_at.isoformat(), req.starts_at.isoformat()))
+    if c.fetchone() is not None:
+        conn.close()
+        raise HTTPException(status_code=409, detail="Slot overlaps an existing slot")
+    c.execute("INSERT INTO CONSULTATION_SLOTS (id, practitioner_id, starts_at, ends_at, status) VALUES (?, ?, ?, ?, 'free')",
+              (slot_id, practitioner["id"], req.starts_at.isoformat(), req.ends_at.isoformat()))
+    conn.commit()
+    conn.close()
+    return {"success": True, "slot_id": slot_id}
+
+
+@app.get("/practitioner/slots")
+def practitioner_slots(authorization: Optional[str] = Header(None)):
+    practitioner = _require_practitioner(authorization)
+    conn = connect_db_connection()
+    c = conn.cursor()
+    c.execute("""SELECT id, starts_at, ends_at, status, booked_by_user_id, booking_id
+                 FROM CONSULTATION_SLOTS WHERE practitioner_id=?
+                 ORDER BY starts_at""", (practitioner["id"],))
+    slots = [{"id": row[0], "starts_at": row[1], "ends_at": row[2],
+              "status": row[3], "booked_by_user_id": row[4],
+              "booking_id": row[5]} for row in c.fetchall()]
+    conn.close()
+    return slots
+
+
+@app.get("/practitioner/bookings")
+def practitioner_bookings(authorization: Optional[str] = Header(None)):
+    practitioner = _require_practitioner(authorization)
+    conn = connect_db_connection()
+    c = conn.cursor()
+    c.execute("""SELECT b.id, b.status, b.payment_status, b.payment_timing,
+                        b.fee_amount, b.currency, b.created_at, s.starts_at,
+                        s.ends_at, u.name, u.email
+                 FROM CONSULTATION_BOOKINGS b
+                 JOIN CONSULTATION_SLOTS s ON s.id=b.slot_id
+                 JOIN USERS u ON u.id=b.user_id
+                 WHERE b.practitioner_id=? ORDER BY s.starts_at""", (practitioner["id"],))
+    result = [{"id": r[0], "status": r[1], "payment_status": r[2],
+               "payment_timing": r[3], "fee_amount": _consultation_money(r[4]),
+               "currency": r[5], "created_at": r[6], "starts_at": r[7],
+               "ends_at": r[8], "user_name": r[9], "user_email": r[10]} for r in c.fetchall()]
+    conn.close()
+    return result
+
+
+@app.patch("/practitioner/bookings/{booking_id}")
+def practitioner_booking_action(booking_id: str, req: PractitionerBookingActionRequest,
+                                 authorization: Optional[str] = Header(None)):
+    practitioner = _require_practitioner(authorization)
+    conn = connect_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT status, payment_status, slot_id FROM CONSULTATION_BOOKINGS WHERE id=? AND practitioner_id=?", (booking_id, practitioner["id"]))
+    row = c.fetchone()
+    if row is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Appointment not found")
+    if req.action == "decline":
+        c.execute("UPDATE CONSULTATION_BOOKINGS SET status='cancelled', updated_at=? WHERE id=?", (now(), booking_id))
+        c.execute("UPDATE CONSULTATION_SLOTS SET status='free', booked_by_user_id=NULL, booking_id=NULL WHERE id=?", (row[2],))
+    elif req.action == "accept_cash":
+        c.execute("UPDATE CONSULTATION_BOOKINGS SET status='confirmed', payment_status='paid', updated_at=? WHERE id=?", (now(), booking_id))
+        c.execute(
+            """INSERT INTO CONSULTATION_PAYMENTS
+               (id, booking_id, user_id, provider, method, status, amount, currency, transaction_id, created_at, paid_at)
+               SELECT ?, id, user_id, 'manual', 'cash', 'paid', fee_amount, currency, ?, ?, ?
+               FROM CONSULTATION_BOOKINGS WHERE id=?""",
+            (uuid.uuid4().hex, f"cash_{uuid.uuid4().hex}", now(), now(), booking_id),
+        )
+    elif req.action == "completed":
+        c.execute("UPDATE CONSULTATION_BOOKINGS SET status='completed', updated_at=? WHERE id=?", (now(), booking_id))
+    else:
+        c.execute("UPDATE CONSULTATION_BOOKINGS SET status='confirmed', updated_at=? WHERE id=?", (now(), booking_id))
+    conn.commit()
+    conn.close()
+    return {"success": True, "status": "cancelled" if req.action == "decline" else ("completed" if req.action == "completed" else "confirmed"),
+            "payment_status": "paid" if req.action == "accept_cash" else row[1]}
 
 
 @app.put("/admin/moderation-policies/{category}")
@@ -1431,7 +1766,8 @@ def signup(req: SignupRequest):
 
     user_id = uuid.uuid4().hex
     token = uuid.uuid4().hex
-    c.execute("INSERT INTO USERS (id, name, email, password, token) VALUES (?, ?, ?, ?, ?)", (user_id, req.name, req.email, req.password, token))
+    emergency_contact = (req.emergency_contact or "").strip() or None
+    c.execute("INSERT INTO USERS (id, name, email, password, token, emergency_contact) VALUES (?, ?, ?, ?, ?, ?)", (user_id, req.name, req.email, req.password, token, emergency_contact))
     conn.commit()
     conn.close()
 
@@ -1474,10 +1810,10 @@ def update_profile(req: UpdateProfileRequest, authorization: Optional[str] = Hea
     user = require_user(authorization)
     name = req.name.strip()
     email = req.email.strip().lower()
-    emergency_contact = (req.emergency_contact or "").strip() or None
+    emergency_contact = req.emergency_contact.strip()
     if not name or "@" not in email:
         raise HTTPException(status_code=400, detail="Enter a valid name and email")
-    if emergency_contact and "@" not in emergency_contact:
+    if "@" not in emergency_contact:
         raise HTTPException(status_code=400, detail="Enter a valid emergency contact email")
     conn = connect_db_connection()
     c = conn.cursor()
@@ -1489,6 +1825,22 @@ def update_profile(req: UpdateProfileRequest, authorization: Optional[str] = Hea
     conn.commit()
     conn.close()
     return {"name": name, "email": email, "emergency_contact": emergency_contact}
+
+
+@app.post("/profile/change-password")
+def change_password(req: ChangePasswordRequest, authorization: Optional[str] = Header(None)):
+    user = require_user(authorization)
+    conn = connect_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT password FROM USERS WHERE id=?", (user["id"],))
+    row = c.fetchone()
+    if not row or row[0] != req.current_password.strip():
+        conn.close()
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    c.execute("UPDATE USERS SET password=? WHERE id=?", (req.new_password, user["id"]))
+    conn.commit()
+    conn.close()
+    return {"success": True}
 
 
 @app.get("/profile/me")
@@ -1580,6 +1932,30 @@ def checkin(req: CheckinRequest, authorization: Optional[str] = Header(None)):
         "dominant_category": dominant,
         "recommended_palettes": recommended,
     }
+
+
+@app.get("/checkin/status")
+def checkin_status(authorization: Optional[str] = Header(None)):
+    """Return whether the user has completed a check-in within the last 24 hours."""
+    user = require_user(authorization)
+    conn = connect_db_connection()
+    c = conn.cursor()
+    c.execute(
+        """SELECT created_at FROM MOOD_CHECKINS
+           WHERE user_id=? ORDER BY created_at DESC LIMIT 1""",
+        (user["id"],),
+    )
+    row = c.fetchone()
+    conn.close()
+    if row is None:
+        return {"completed_within_24_hours": False, "last_checkin_at": None}
+    try:
+        last_checkin = datetime.fromisoformat(str(row[0]).replace("Z", "+00:00"))
+        last_checkin = _utc_naive(last_checkin)
+        completed = datetime.now(timezone.utc).replace(tzinfo=None) - last_checkin < timedelta(hours=24)
+    except (TypeError, ValueError):
+        completed = False
+    return {"completed_within_24_hours": completed, "last_checkin_at": row[0]}
 
 
 # =====================================================================
@@ -2483,6 +2859,13 @@ def create_community_post(
                 created_at,
             ),
         )
+        c.execute(
+            """INSERT INTO COMMUNITY_POST_MODERATION_LOG
+               (id, post_id, action, reason, created_at)
+               VALUES (?, ?, 'hidden', ?, ?)""",
+            (uuid.uuid4().hex, post_id,
+             f"Automatically hidden for {moderation_result['category']}", created_at),
+        )
 
     conn.commit()
     conn.close()
@@ -2500,6 +2883,11 @@ def create_community_post(
         "created_at": created_at,
         "report_count": 0,
         "comment_count": 0,
+        "removed": bool(is_hidden),
+        "removal_reason": (
+            f"Your post was removed due to policy violations ({moderation_result['category']})."
+            if is_hidden else None
+        ),
     }
 
 
@@ -2551,6 +2939,12 @@ def report_community_post(
         c.execute(
             "UPDATE COMMUNITY_POSTS SET is_hidden=1 WHERE id=?",
             (post_id,),
+        )
+        c.execute(
+            """INSERT INTO COMMUNITY_POST_MODERATION_LOG
+               (id, post_id, action, reason, created_at)
+               VALUES (?, ?, 'hidden', 'Automatically hidden after 3 reports', ?)""",
+            (uuid.uuid4().hex, post_id, now()),
         )
     conn.commit()
     conn.close()
@@ -3874,7 +4268,7 @@ def create_consultation_booking(
     booking_id = uuid.uuid4().hex
     timestamp = now()
     pay_before = req.payment_timing == "before"
-    booking_status = "pending_payment" if pay_before else "confirmed"
+    booking_status = "pending_payment" if pay_before else "pending"
     slot_status = "held" if pay_before else "booked"
     held_until = (
         datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=15)

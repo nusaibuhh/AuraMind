@@ -126,11 +126,15 @@ class _CommunityForumScreenState extends State<CommunityForumScreen> {
     }
 
     try {
-      await _api.createCommunityPost(text);
+      final post = await _api.createCommunityPost(text);
       await _loadPosts();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Anonymous post published.')),
+        SnackBar(
+          content: Text(post['removed'] == true
+              ? 'Your post was removed due to policy violations.'
+              : 'Anonymous post published.'),
+        ),
       );
     } on ApiException catch (e) {
       if (!mounted) return;

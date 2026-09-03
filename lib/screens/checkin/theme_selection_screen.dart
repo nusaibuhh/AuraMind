@@ -17,6 +17,7 @@ class ThemeSelectionScreen extends StatefulWidget {
 class _ThemeSelectionScreenState extends State<ThemeSelectionScreen> {
   ThemePalette? _selected;
   bool _isSaving = false;
+  bool _showAllThemes = false;
 
   Future<void> _applyTheme() async {
     if (_selected == null || _isSaving) return;
@@ -25,7 +26,9 @@ class _ThemeSelectionScreenState extends State<ThemeSelectionScreen> {
 
     try {
       final api = context.read<AuthProvider>().api;
-      await context.read<AppThemeProvider>().selectPalette(_selected!, api, wellbeingCategory: context.read<QuestionnaireProvider>().result!.dominantCategory);
+      await context.read<AppThemeProvider>().selectPalette(_selected!, api,
+          wellbeingCategory:
+              context.read<QuestionnaireProvider>().result!.dominantCategory);
 
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
@@ -49,7 +52,8 @@ class _ThemeSelectionScreenState extends State<ThemeSelectionScreen> {
   Widget build(BuildContext context) {
     final provider = context.watch<QuestionnaireProvider>();
     final result = provider.result;
-    final themes = provider.recommendedThemes ?? [];
+    final themes =
+        _showAllThemes ? allThemePalettes : provider.recommendedThemes ?? [];
     final theme = Theme.of(context);
 
     if (result == null || themes.isEmpty) {
@@ -69,7 +73,8 @@ class _ThemeSelectionScreenState extends State<ThemeSelectionScreen> {
               child: Row(
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
+                    icon:
+                        const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                   const Spacer(),
@@ -112,28 +117,31 @@ class _ThemeSelectionScreenState extends State<ThemeSelectionScreen> {
                 },
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 14),
-              child: Center(
-                child: TextButton(
-                  onPressed: _applyTheme,
-                  child: Text(
-                    'View More Themes',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+            if (!_showAllThemes)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 14),
+                child: Center(
+                  child: TextButton(
+                    onPressed: () => setState(() => _showAllThemes = true),
+                    child: Text(
+                      'View More Themes',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color:
+                            theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
               child: SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: _selected != null && !_isSaving ? _applyTheme : null,
+                  onPressed:
+                      _selected != null && !_isSaving ? _applyTheme : null,
                   child: _isSaving
                       ? const SizedBox(
                           height: 22,

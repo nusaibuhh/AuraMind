@@ -4,6 +4,7 @@ import '../behavioral_activation/behavioral_activation_screen.dart';
 import '../best_self/best_self_canvas_screen.dart';
 import '../breathing/breathing_screen.dart';
 import '../grounding/grounding_screen.dart';
+import '../kindness/kindness_wheel_screen.dart';
 import '../momentum/mood_momentum_walk_screen.dart';
 import '../relaxation/muscle_relaxation_screen.dart';
 import '../savoring/savoring_log_screen.dart';
@@ -69,6 +70,14 @@ class ExercisesScreen extends StatelessWidget {
         const Color(0xFF694A70),
         const Color(0xFFF3EAF5),
         const MuscleRelaxationScreen(),
+      ),
+      (
+        'Kindness Wheel',
+        'Choose one small act of kindness.',
+        Icons.favorite_rounded,
+        const Color(0xFFD16A7A),
+        const Color(0xFFFCECEF),
+        const KindnessWheelScreen(),
       ),
     ];
     return Scaffold(
