@@ -54,11 +54,11 @@ def now():
     return datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
 MYSQL_CONFIG = {
-    "host": os.getenv("MYSQL_HOST", "localhost"),
-    "port": int(os.getenv("MYSQL_PORT", "3306")),
-    "user": os.getenv("MYSQL_USER", "auramind"),
-    "password": os.getenv("MYSQL_PASSWORD", ""),
-    "database": os.getenv("MYSQL_DATABASE", "auramind"),
+    "host": os.getenv("DB_HOST", "mysql.railway.internal"),
+    "port": int(os.getenv("DB_PORT", "3306")),
+    "user": os.getenv("DB_USER", "root"),
+    "password": os.getenv("DB_PASSWORD", ""),
+    "database": os.getenv("DB_NAME", "mysql"),
     "charset": "utf8mb4",
     "connect_timeout": int(os.getenv("MYSQL_CONNECT_TIMEOUT", "5")),
     "read_timeout": int(os.getenv("MYSQL_READ_TIMEOUT", "20")),
