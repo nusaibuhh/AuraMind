@@ -48,6 +48,9 @@ MYSQL_CONFIG = {
     "password": os.getenv("MYSQL_PASSWORD", ""),
     "database": os.getenv("MYSQL_DATABASE", "auramind"),
     "charset": "utf8mb4",
+    "connect_timeout": int(os.getenv("MYSQL_CONNECT_TIMEOUT", "5")),
+    "read_timeout": int(os.getenv("MYSQL_READ_TIMEOUT", "20")),
+    "write_timeout": int(os.getenv("MYSQL_WRITE_TIMEOUT", "20")),
 }
 
 # Allow CORS for development (adjust in production)
@@ -104,8 +107,23 @@ class DatabaseConnection:
 
 
 def connect_db_connection():
-    """Open a MySQL connection for a single request."""
-    return DatabaseConnection(pymysql.connect(**MYSQL_CONFIG))
+    """Open a MySQL connection for a single request.
+
+    AuraMind uses MySQL as its central database. If MySQL is not running, raise
+    a clear backend error instead of silently falling back to the old SQLite
+    files that may still exist in the repository.
+    """
+    try:
+        return DatabaseConnection(pymysql.connect(**MYSQL_CONFIG))
+    except pymysql.MySQLError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                f"MySQL database is unavailable at {MYSQL_CONFIG['host']}:{MYSQL_CONFIG['port']}. "
+                "Start the AuraMind MySQL service and check FastAPI/.env credentials. "
+                f"Database driver message: {exc}"
+            ),
+        ) from exc
 
 
 def _ensure_column(cursor, table: str, column: str, column_type: str):
@@ -281,6 +299,55 @@ def connect_db():
         status VARCHAR(32) DEFAULT 'pending',
         created_at TEXT NOT NULL,
         reviewed_at TEXT
+    )""")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS ADMIN_TOKENS (
+        token VARCHAR(128) PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS PRACTITIONER_REGISTRATIONS (
+        id VARCHAR(64) PRIMARY KEY,
+        name TEXT NOT NULL,
+        qualifications TEXT NOT NULL,
+        specialty TEXT NOT NULL,
+        registration_number TEXT NOT NULL,
+        contact_no TEXT NOT NULL,
+        chamber TEXT NOT NULL,
+        status VARCHAR(24) NOT NULL DEFAULT 'pending',
+        submitted_at TEXT NOT NULL,
+        reviewed_at TEXT
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS MODERATION_POLICIES (
+        category VARCHAR(64) PRIMARY KEY,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        threshold FLOAT NOT NULL DEFAULT 0.70,
+        updated_at TEXT NOT NULL
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS SYSTEM_SETTINGS (
+        setting_key VARCHAR(128) PRIMARY KEY,
+        setting_value TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )""")
+
+    # Module 3: database-backed Kindness Wheel history (last seven days only).
+    c.execute("""CREATE TABLE IF NOT EXISTS KINDNESS_COMPLETIONS (
+        id VARCHAR(64) PRIMARY KEY,
+        user_id VARCHAR(64) NOT NULL,
+        task_key VARCHAR(64) NOT NULL,
+        task_text TEXT NOT NULL,
+        points INTEGER NOT NULL,
+        completed_at TEXT NOT NULL,
+        completed_date VARCHAR(10) NOT NULL
+    )""")
+    _ensure_index(c, "KINDNESS_COMPLETIONS", "kindness_user_date_idx", "user_id, completed_date")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS ADMIN_ACCOUNTS (
+        email VARCHAR(255) PRIMARY KEY,
+        password TEXT NOT NULL,
+        role VARCHAR(64) NOT NULL DEFAULT 'super_admin',
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL
     )""")
 
     # Journal & Notes entries
@@ -465,6 +532,35 @@ def connect_db():
     seed_palettes(conn)
     seed_behavioral_activities(conn)
     seed_consultation_catalog(conn)
+    c.execute("SELECT COUNT(*) FROM MODERATION_POLICIES")
+    if c.fetchone()[0] == 0:
+        for category in ("bullying","harassment","self_harm","hate_speech","sexual_content"):
+            c.execute("INSERT INTO MODERATION_POLICIES (category,enabled,threshold,updated_at) VALUES (?,1,0.70,?)",
+                      (category,now()))
+    c.execute("SELECT COUNT(*) FROM SYSTEM_SETTINGS")
+    if c.fetchone()[0] == 0:
+        for key,value in (("reward_points_per_kindness","10"),("subscription_base_fee","0"),
+                          ("consultation_booking_enabled","true")):
+            c.execute("INSERT INTO SYSTEM_SETTINGS (setting_key,setting_value,updated_at) VALUES (?,?,?)",
+                      (key,value,now()))
+
+    # Always ensure a known local demo administrator exists for evaluation.
+    admin_email = os.getenv("ADMIN_EMAIL", "admin@auramind.local").strip().lower()
+    admin_password = os.getenv("ADMIN_PASSWORD", "Admin@1234")
+    seed_accounts = [
+        ("admin@auramind.local", "Admin@1234"),
+    ]
+    if admin_email != "admin@auramind.local":
+        seed_accounts.append((admin_email, admin_password))
+    for seed_email, seed_password in seed_accounts:
+        if seed_email and seed_password:
+            c.execute("SELECT email FROM ADMIN_ACCOUNTS WHERE email=?", (seed_email,))
+            if c.fetchone() is None:
+                c.execute(
+                    "INSERT INTO ADMIN_ACCOUNTS (email,password,role,is_active,created_at) VALUES (?,?,?,?,?)",
+                    (seed_email, seed_password, "super_admin", 1, now()),
+                )
+    conn.commit()
     conn.close()
 
 
@@ -702,6 +798,49 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class AdminLoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class NearbyPractitionerRequest(BaseModel):
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    radius_meters: int = Field(default=5000, ge=500, le=10000)
+
+
+class PractitionerRegistrationRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=200)
+    qualifications: str = Field(min_length=2, max_length=500)
+    specialty: str = Field(min_length=2, max_length=500)
+    registration_number: str = Field(min_length=2, max_length=100)
+    contact_no: str = Field(min_length=3, max_length=100)
+    chamber: str = Field(min_length=2, max_length=500)
+
+
+class AdminModerationActionRequest(BaseModel):
+    status: Literal["approved", "rejected", "hidden", "restored"]
+
+
+class AdminPractitionerActionRequest(BaseModel):
+    status: Literal["approved", "rejected"]
+
+
+class AdminPolicyRequest(BaseModel):
+    enabled: bool
+    threshold: float = Field(ge=0, le=1)
+
+
+class AdminSettingRequest(BaseModel):
+    value: str
+
+
+class KindnessCompletionRequest(BaseModel):
+    task_key: str = Field(min_length=1, max_length=64)
+    task_text: str = Field(min_length=1, max_length=1000)
+    points: int = Field(ge=1, le=100)
+
+
 class CheckinRequest(BaseModel):
     answers: Dict[str, int]
 
@@ -842,6 +981,438 @@ def require_user(auth_header: Optional[str]):
     if not user:
         raise HTTPException(status_code=401, detail="Invalid token")
     return user
+
+
+# =====================================================================
+# KINDNESS WHEEL — database-backed seven-day history, streak and points
+# =====================================================================
+
+def _ensure_kindness_storage():
+    """Create the Kindness Wheel table lazily if an existing database was
+    initialized before this Module 3 feature was added.
+
+    This is intentionally called by the kindness endpoints as well as during
+    startup. It prevents older AuraMind databases from returning a 500 error
+    (for example, "table KINDNESS_COMPLETIONS does not exist") when a user
+    marks a spun task as complete.
+    """
+    conn = connect_db_connection()
+    c = conn.cursor()
+    try:
+        c.execute("""CREATE TABLE IF NOT EXISTS KINDNESS_COMPLETIONS (
+            id VARCHAR(64) PRIMARY KEY,
+            user_id VARCHAR(64) NOT NULL,
+            task_key VARCHAR(64) NOT NULL,
+            task_text TEXT NOT NULL,
+            points INTEGER NOT NULL,
+            completed_at TEXT NOT NULL,
+            completed_date VARCHAR(10) NOT NULL
+        )""")
+        _ensure_index(c, "KINDNESS_COMPLETIONS", "kindness_user_date_idx", "user_id, completed_date")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _prune_kindness_history(cursor, user_id: str):
+    cutoff = (datetime.now(timezone.utc).replace(tzinfo=None).date() - timedelta(days=6)).isoformat()
+    cursor.execute("DELETE FROM KINDNESS_COMPLETIONS WHERE user_id=? AND completed_date<?", (user_id, cutoff))
+
+
+def _kindness_summary(user_id: str):
+    # Existing installations may already have the USERS table but not the
+    # newly introduced Kindness Wheel table. Ensure it before every summary.
+    _ensure_kindness_storage()
+    conn = connect_db_connection(); c = conn.cursor()
+    _prune_kindness_history(c, user_id)
+    c.execute("""SELECT id, task_key, task_text, points, completed_at, completed_date
+                 FROM KINDNESS_COMPLETIONS WHERE user_id=? ORDER BY completed_at DESC""", (user_id,))
+    rows = c.fetchall()
+    conn.commit(); conn.close()
+    total_points = sum(int(r[3] or 0) for r in rows)
+    unique_dates = {str(r[5]) for r in rows}
+    probe = datetime.now(timezone.utc).replace(tzinfo=None).date()
+    streak = 0
+    while probe.isoformat() in unique_dates:
+        streak += 1
+        probe -= timedelta(days=1)
+    return {"streak": streak, "points": total_points, "completed_tasks": len(rows),
+            "history": [{"id":r[0],"task_key":r[1],"task_text":r[2],"points":int(r[3] or 0),
+                         "completed_at":r[4],"completed_date":r[5]} for r in rows]}
+
+
+@app.get("/kindness/summary")
+def kindness_summary(authorization: Optional[str] = Header(None)):
+    user = require_user(authorization)
+    return _kindness_summary(user["id"])
+
+
+@app.post("/kindness/completions")
+def complete_kindness(req: KindnessCompletionRequest, authorization: Optional[str] = Header(None)):
+    user = require_user(authorization)
+    # Lazy migration keeps the feature compatible with databases created by
+    # earlier project versions.
+    _ensure_kindness_storage()
+    completion_id = uuid.uuid4().hex
+    timestamp = now()
+    conn = connect_db_connection(); c = conn.cursor()
+    _prune_kindness_history(c, user["id"])
+    c.execute("""INSERT INTO KINDNESS_COMPLETIONS
+                 (id,user_id,task_key,task_text,points,completed_at,completed_date)
+                 VALUES (?,?,?,?,?,?,?)""",
+              (completion_id,user["id"],req.task_key,req.task_text,req.points,timestamp,timestamp[:10]))
+    conn.commit(); conn.close()
+    result = _kindness_summary(user["id"])
+    result.update({"success":True,"completion_id":completion_id})
+    return result
+
+
+@app.delete("/kindness/completions/{completion_id}")
+def undo_kindness_completion(completion_id: str, authorization: Optional[str] = Header(None)):
+    user = require_user(authorization)
+    _ensure_kindness_storage()
+    conn = connect_db_connection(); c = conn.cursor()
+    c.execute("DELETE FROM KINDNESS_COMPLETIONS WHERE id=? AND user_id=?", (completion_id,user["id"]))
+    if c.rowcount == 0:
+        conn.close(); raise HTTPException(status_code=404, detail="Completed kindness task not found")
+    conn.commit(); conn.close()
+    result = _kindness_summary(user["id"])
+    result.update({"success":True})
+    return result
+
+
+@app.post("/practitioners/register")
+def register_practitioner(req: PractitionerRegistrationRequest):
+    registration_id = uuid.uuid4().hex
+    submitted = now()
+    conn = connect_db_connection()
+    c = conn.cursor()
+    c.execute(
+        """INSERT INTO PRACTITIONER_REGISTRATIONS
+           (id,name,qualifications,specialty,registration_number,contact_no,chamber,status,submitted_at)
+           VALUES (?,?,?,?,?,?,?,?,?)""",
+        (registration_id, req.name.strip(), req.qualifications.strip(), req.specialty.strip(),
+         req.registration_number.strip(), req.contact_no.strip(), req.chamber.strip(),
+         "pending", submitted),
+    )
+    conn.commit()
+    conn.close()
+    return {"success": True, "registration_id": registration_id, "status": "pending",
+            "message": "Registration submitted for administrator verification."}
+
+
+@app.post("/practitioners/nearby-osm")
+def nearby_practitioners_osm(req: NearbyPractitionerRequest):
+    """Return small, user-triggered OpenStreetMap/Overpass nearby results.
+
+    This backend proxy avoids browser CORS issues and lets the server identify
+    the application with a User-Agent. It is deliberately limited to a small
+    radius and result set because public Overpass servers are shared resources.
+    """
+    radius = min(max(req.radius_meters, 500), 10000)
+    lat = req.latitude
+    lon = req.longitude
+    query = f"""[out:json][timeout:20];
+(
+  nwr["healthcare"~"psychotherapist|mental_health_care|psychiatrist"](around:{radius},{lat},{lon});
+  nwr["healthcare"="doctor"](around:{radius},{lat},{lon});
+  nwr["amenity"="clinic"](around:{radius},{lat},{lon});
+  nwr["amenity"="hospital"](around:{radius},{lat},{lon});
+);
+out center tags;"""
+    request = UrlRequest(
+        "https://overpass-api.de/api/interpreter",
+        data=query.encode("utf-8"),
+        headers={
+            "Content-Type": "text/plain; charset=utf-8",
+            "User-Agent": "AuraMind/1.0 (CSE471 student project)",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=25) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"OpenStreetMap search returned HTTP {exc.code}. Please try again shortly.")
+    except (URLError, TimeoutError, ValueError) as exc:
+        raise HTTPException(status_code=502, detail="OpenStreetMap search is temporarily unavailable. Please try again shortly.") from exc
+
+    places = []
+    seen = set()
+    for element in payload.get("elements", []):
+        tags = element.get("tags", {}) or {}
+        center = element.get("center", {}) or {}
+        item_lat = element.get("lat", center.get("lat"))
+        item_lon = element.get("lon", center.get("lon"))
+        if item_lat is None or item_lon is None:
+            continue
+        name = (tags.get("name") or tags.get("official_name") or "Mental-health location").strip()
+        address_parts = [
+            tags.get("addr:housenumber"),
+            tags.get("addr:street"),
+            tags.get("addr:suburb"),
+            tags.get("addr:city"),
+        ]
+        address = ", ".join(part for part in address_parts if part)
+        kind = tags.get("healthcare") or tags.get("amenity") or "healthcare"
+        key = (name.lower(), round(float(item_lat), 5), round(float(item_lon), 5))
+        if key in seen:
+            continue
+        seen.add(key)
+        places.append({
+            "name": name,
+            "type": str(kind).replace("_", " "),
+            "address": address,
+            "latitude": float(item_lat),
+            "longitude": float(item_lon),
+        })
+        if len(places) >= 50:
+            break
+
+    return {"places": places, "source": "OpenStreetMap / Overpass API"}
+
+
+# =====================================================================
+# ADMIN PANEL — protected moderation, practitioner verification and settings
+# =====================================================================
+
+def _admin_credentials():
+    return (
+        os.getenv("ADMIN_EMAIL", "admin@auramind.local").strip().lower(),
+        os.getenv("ADMIN_PASSWORD", "Admin@1234"),
+    )
+
+
+def _require_admin(auth_header: Optional[str]):
+    token = _extract_token(auth_header)
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing admin authorization")
+    conn = connect_db_connection(); c = conn.cursor()
+    c.execute("SELECT token, expires_at FROM ADMIN_TOKENS WHERE token=?", (token,))
+    row = c.fetchone(); conn.close()
+    if row is None:
+        raise HTTPException(status_code=401, detail="Invalid admin token")
+    try:
+        expired = datetime.fromisoformat(row[1]) < datetime.now(timezone.utc).replace(tzinfo=None)
+    except ValueError:
+        expired = True
+    if expired:
+        raise HTTPException(status_code=401, detail="Admin session expired")
+    return token
+
+
+@app.post("/admin/login")
+def admin_login(req: AdminLoginRequest):
+    email = req.email.strip().lower()
+    password = req.password
+    conn = connect_db_connection(); c = conn.cursor()
+    c.execute("SELECT password, is_active FROM ADMIN_ACCOUNTS WHERE email=?", (email,))
+    row = c.fetchone()
+    if row is None:
+        configured_email, configured_password = _admin_credentials()
+        if email != configured_email or password != configured_password:
+            conn.close(); raise HTTPException(status_code=401, detail="Invalid administrator credentials")
+    elif not bool(row[1]) or password != row[0]:
+        conn.close(); raise HTTPException(status_code=401, detail="Invalid administrator credentials")
+    token = uuid.uuid4().hex
+    created = datetime.now(timezone.utc).replace(tzinfo=None)
+    expires = created + timedelta(hours=8)
+    c.execute("INSERT INTO ADMIN_TOKENS (token, created_at, expires_at) VALUES (?, ?, ?)",
+              (token, created.isoformat(), expires.isoformat()))
+    conn.commit(); conn.close()
+    return {"access_token": token, "token_type": "bearer", "expires_at": expires.isoformat()}
+
+
+@app.post("/admin/logout")
+def admin_logout(authorization: Optional[str] = Header(None)):
+    token = _require_admin(authorization)
+    conn = connect_db_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM ADMIN_TOKENS WHERE token=?", (token,))
+    conn.commit()
+    conn.close()
+    return {"success": True}
+
+
+@app.get("/admin/dashboard")
+def admin_dashboard(authorization: Optional[str] = Header(None)):
+    _require_admin(authorization)
+    conn = connect_db_connection()
+    c = conn.cursor()
+    counts = {}
+    for key, table in (
+        ("community_posts", "COMMUNITY_POSTS"),
+        ("community_reports", "COMMUNITY_REPORTS"),
+        ("comment_reports", "COMMUNITY_COMMENT_REPORTS"),
+        ("moderation_pending", "COMMUNITY_MODERATION_QUEUE"),
+        ("practitioner_pending", "PRACTITIONER_REGISTRATIONS"),
+        ("consultation_practitioners", "CONSULTATION_PRACTITIONERS"),
+        ("bookings", "CONSULTATION_BOOKINGS"),
+    ):
+        if key in ("moderation_pending", "practitioner_pending"):
+            c.execute(f"SELECT COUNT(*) FROM {table} WHERE status='pending'")
+        else:
+            c.execute(f"SELECT COUNT(*) FROM {table}")
+        counts[key] = int(c.fetchone()[0] or 0)
+
+    # Aggregate activity only. No user names, emails or user IDs are returned.
+    c.execute("SELECT COUNT(*) FROM USERS")
+    counts["registered_users"] = int(c.fetchone()[0] or 0)
+
+    c.execute("""SELECT id, post_id, content, category, confidence, status, created_at
+                 FROM COMMUNITY_MODERATION_QUEUE
+                 WHERE status='pending' ORDER BY created_at DESC LIMIT 50""")
+    moderation = [{"id":r[0],"post_id":r[1],"content":r[2],"category":r[3],
+                   "confidence":float(r[4] or 0),"status":r[5],"created_at":r[6]}
+                  for r in c.fetchall()]
+
+    c.execute("""SELECT id, name, qualifications, specialty, registration_number,
+                        contact_no, chamber, status, submitted_at
+                 FROM PRACTITIONER_REGISTRATIONS
+                 WHERE status='pending' ORDER BY submitted_at DESC LIMIT 50""")
+    practitioner_queue = [{"id":r[0],"name":r[1],"qualifications":r[2],"specialty":r[3],
+                           "registration_number":r[4],"contact_no":r[5],"chamber":r[6],
+                           "status":r[7],"submitted_at":r[8]} for r in c.fetchall()]
+
+    c.execute("""SELECT r.id, r.post_id, r.reason, r.created_at
+                 FROM COMMUNITY_REPORTS r ORDER BY r.created_at DESC LIMIT 50""")
+    reports = [{"id":r[0], "post_id":r[1], "reason":r[2] or "Community report",
+                "created_at":r[3]} for r in c.fetchall()]
+    # Safety-review access: public forum views remain anonymous, but an authorized
+    # administrator can identify the author of *reported* content to investigate
+    # credible bullying or harm reports and remove the content when necessary.
+    c.execute("""SELECT r.id, r.comment_id, r.reason, r.created_at,
+                        cc.post_id, cc.body, cc.created_at,
+                        u.id, u.name, u.email
+                 FROM COMMUNITY_COMMENT_REPORTS r
+                 JOIN COMMUNITY_COMMENTS cc ON cc.id = r.comment_id
+                 LEFT JOIN USERS u ON u.id = cc.user_id
+                 ORDER BY r.created_at DESC LIMIT 50""")
+    comment_reports = [{
+        "id": r[0],
+        "comment_id": r[1],
+        "reason": r[2] or "Comment report",
+        "created_at": r[3],
+        "post_id": r[4],
+        "comment": r[5],
+        "comment_created_at": r[6],
+        "commenter": {
+            "user_id": r[7],
+            "name": r[8] or "Unknown user",
+            "email": r[9] or "No email available",
+        },
+    } for r in c.fetchall()]
+
+    c.execute("SELECT category, enabled, threshold, updated_at FROM MODERATION_POLICIES ORDER BY category")
+    policies = [{"category":r[0],"enabled":bool(r[1]),"threshold":float(r[2]),"updated_at":r[3]}
+                for r in c.fetchall()]
+    c.execute("SELECT setting_key, setting_value, updated_at FROM SYSTEM_SETTINGS ORDER BY setting_key")
+    settings = [{"key":r[0],"value":r[1],"updated_at":r[2]} for r in c.fetchall()]
+    conn.close()
+    return {"privacy_note":"Community remains anonymous to regular users. Authorized administrators can view the identity of authors only for reported content during safety and moderation review.",
+            "counts":counts,"moderation_queue":moderation,
+            "reports":reports,"comment_reports":comment_reports,
+            "practitioner_queue":practitioner_queue,"moderation_policies":policies,
+            "system_settings":settings}
+
+
+@app.delete("/admin/community/comments/{comment_id}")
+def admin_delete_reported_comment(
+    comment_id: str,
+    authorization: Optional[str] = Header(None),
+):
+    """Permanently remove a reported comment after an authorized safety review."""
+    _require_admin(authorization)
+    conn = connect_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT id FROM COMMUNITY_COMMENTS WHERE id=?", (comment_id,))
+    if c.fetchone() is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Community comment not found")
+    # Delete dependent reports first because some MySQL installations enforce
+    # foreign keys while older local installations may not.
+    c.execute("DELETE FROM COMMUNITY_COMMENT_REPORTS WHERE comment_id=?", (comment_id,))
+    c.execute("DELETE FROM COMMUNITY_COMMENTS WHERE id=?", (comment_id,))
+    conn.commit()
+    conn.close()
+    return {"success": True, "deleted_comment_id": comment_id}
+
+
+@app.patch("/admin/moderation/{queue_id}")
+def admin_moderation_action(queue_id: str, req: AdminModerationActionRequest,
+                            authorization: Optional[str] = Header(None)):
+    _require_admin(authorization)
+    conn = connect_db_connection(); c = conn.cursor()
+    c.execute("SELECT post_id FROM COMMUNITY_MODERATION_QUEUE WHERE id=?", (queue_id,))
+    row = c.fetchone()
+    if row is None:
+        conn.close(); raise HTTPException(status_code=404, detail="Moderation item not found")
+    status = req.status
+    if status == "hidden":
+        c.execute("UPDATE COMMUNITY_POSTS SET is_hidden=1 WHERE id=?", (row[0],))
+    elif status == "restored":
+        c.execute("UPDATE COMMUNITY_POSTS SET is_hidden=0 WHERE id=?", (row[0],))
+        status = "approved"
+    c.execute("UPDATE COMMUNITY_MODERATION_QUEUE SET status=?, reviewed_at=? WHERE id=?",
+              (status, now(), queue_id))
+    conn.commit(); conn.close()
+    return {"success":True,"status":status}
+
+
+@app.patch("/admin/practitioners/{registration_id}")
+def admin_practitioner_action(registration_id: str, req: AdminPractitionerActionRequest,
+                              authorization: Optional[str] = Header(None)):
+    _require_admin(authorization)
+    conn = connect_db_connection(); c = conn.cursor()
+    c.execute("""SELECT id, name, qualifications, specialty, contact_no, chamber
+                 FROM PRACTITIONER_REGISTRATIONS WHERE id=?""", (registration_id,))
+    row = c.fetchone()
+    if row is None:
+        conn.close(); raise HTTPException(status_code=404, detail="Practitioner registration not found")
+    c.execute("UPDATE PRACTITIONER_REGISTRATIONS SET status=?, reviewed_at=? WHERE id=?",
+              (req.status, now(), registration_id))
+    if req.status == "approved":
+        public_id = f"verified_{registration_id}"
+        c.execute("SELECT id FROM CONSULTATION_PRACTITIONERS WHERE id=?", (public_id,))
+        if c.fetchone() is None:
+            c.execute("""INSERT INTO CONSULTATION_PRACTITIONERS
+                (id,name,qualifications,specialty,consultation_minutes,contact_no,chamber,
+                 fee_amount,currency,is_demo,is_active)
+                VALUES (?,?,?,?,30,?,?,0,'BDT',0,1)""",
+                (public_id,row[1],row[2],row[3],row[4],row[5]))
+    conn.commit(); conn.close()
+    return {"success":True,"status":req.status}
+
+
+@app.put("/admin/moderation-policies/{category}")
+def admin_update_policy(category: str, req: AdminPolicyRequest,
+                        authorization: Optional[str] = Header(None)):
+    _require_admin(authorization)
+    category = category.strip().lower()
+    if not category: raise HTTPException(status_code=400, detail="Category is required")
+    conn = connect_db_connection(); c = conn.cursor()
+    c.execute("""INSERT INTO MODERATION_POLICIES (category,enabled,threshold,updated_at)
+                 VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE
+                 enabled=VALUES(enabled), threshold=VALUES(threshold), updated_at=VALUES(updated_at)""",
+              (category,1 if req.enabled else 0,req.threshold,now()))
+    conn.commit(); conn.close()
+    return {"success":True,"category":category,"enabled":req.enabled,"threshold":req.threshold}
+
+
+@app.put("/admin/settings/{setting_key}")
+def admin_update_setting(setting_key: str, req: AdminSettingRequest,
+                         authorization: Optional[str] = Header(None)):
+    _require_admin(authorization)
+    allowed={"reward_points_per_kindness","subscription_base_fee","consultation_booking_enabled"}
+    if setting_key not in allowed:
+        raise HTTPException(status_code=400, detail="Setting cannot be changed from the admin panel")
+    conn = connect_db_connection(); c = conn.cursor()
+    c.execute("""INSERT INTO SYSTEM_SETTINGS (setting_key,setting_value,updated_at)
+                 VALUES (?,?,?) ON DUPLICATE KEY UPDATE
+                 setting_value=VALUES(setting_value), updated_at=VALUES(updated_at)""",
+              (setting_key,req.value[:100],now()))
+    conn.commit(); conn.close()
+    return {"success":True,"key":setting_key,"value":req.value[:100]}
 
 
 # =====================================================================

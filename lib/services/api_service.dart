@@ -789,6 +789,48 @@ class ApiService {
     );
   }
 
+  Future<Map<String, dynamic>> getKindnessSummary() async {
+    final response = await _withTimeout(
+      _client.get(
+        Uri.parse('${ApiConfig.baseUrl}/kindness/summary'),
+        headers: _headers,
+      ),
+    );
+    final result = await _handleResponse(response);
+    return Map<String, dynamic>.from(result as Map);
+  }
+
+  Future<Map<String, dynamic>> completeKindnessTask({
+    required String taskKey,
+    required String taskText,
+    required int points,
+  }) async {
+    final response = await _withTimeout(
+      _client.post(
+        Uri.parse('${ApiConfig.baseUrl}/kindness/completions'),
+        headers: _headers,
+        body: jsonEncode({
+          'task_key': taskKey,
+          'task_text': taskText,
+          'points': points,
+        }),
+      ),
+    );
+    final result = await _handleResponse(response);
+    return Map<String, dynamic>.from(result as Map);
+  }
+
+  Future<Map<String, dynamic>> undoKindnessTask(String completionId) async {
+    final response = await _withTimeout(
+      _client.delete(
+        Uri.parse('${ApiConfig.baseUrl}/kindness/completions/$completionId'),
+        headers: _headers,
+      ),
+    );
+    final result = await _handleResponse(response);
+    return Map<String, dynamic>.from(result as Map);
+  }
+
   static Color _hexColor(String hex) {
     final cleaned = hex.replaceFirst('#', '');
     return Color(int.parse('FF$cleaned', radix: 16));

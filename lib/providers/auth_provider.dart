@@ -56,8 +56,9 @@ class AuthProvider extends ChangeNotifier {
           await prefs.setString('user_email', profile.email);
           if (profile.emergencyContact != null) await prefs.setString('emergency_contact', profile.emergencyContact!);
         } catch (_) {}
-        notifyListeners();
       }
+      _isReady = true;
+      notifyListeners();
     }();
   }
 
@@ -73,6 +74,7 @@ class AuthProvider extends ChangeNotifier {
   String? _token;
 
   bool _isLoading = false;
+  bool _isReady = false;
 
 
 
@@ -81,6 +83,9 @@ class AuthProvider extends ChangeNotifier {
   String? get token => _token;
 
   bool get isLoggedIn => _user != null;
+
+  /// True after persisted authentication has been restored (or confirmed absent).
+  bool get isReady => _isReady;
 
   bool get isLoading => _isLoading;
 
