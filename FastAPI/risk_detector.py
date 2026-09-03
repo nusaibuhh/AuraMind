@@ -24,15 +24,18 @@ def _gelu(x: np.ndarray) -> np.ndarray:
     return 0.5 * x * (1.0 + _v_erf(x / math.sqrt(2.0)))
 
 
+HF_REPO_ID = os.getenv("SUICIDE_RISK_HF_REPO", "nusaibuhh/suicide_risk_bert")
+
+
 def _get_model_and_tokenizer():
-    """Lazy-load the model weights and tokenizer using safetensors and tokenizers (pure CPU, zero torch DLL dependency)."""
+    """
+    Lazy-load model weights and tokenizer.
+    If local files are missing (e.g. on a cloud deployment like Railway),
+    automatically downloads and caches them from Hugging Face Hub ('nusaibuhh/suicide_risk_bert').
+    """
     global _WEIGHTS, _TOKENIZER
     if _WEIGHTS is not None and _TOKENIZER is not None:
         return _WEIGHTS, _TOKENIZER
-
-    if not os.path.exists(_MODEL_DIR):
-        logger.error("Model directory not found at %s", _MODEL_DIR)
-        return None, None
 
     try:
         from safetensors.numpy import load_file
@@ -41,13 +44,29 @@ def _get_model_and_tokenizer():
         weights_path = os.path.join(_MODEL_DIR, "model.safetensors")
         tokenizer_path = os.path.join(_MODEL_DIR, "tokenizer.json")
 
+        # 1. Resolve model weights (local or Hugging Face Hub)
+        if not os.path.exists(weights_path):
+            logger.info("Local weights not found at %s. Downloading from Hugging Face Hub: %s...", weights_path, HF_REPO_ID)
+            print(f"[Suicide Risk Detector] Downloading model.safetensors from Hugging Face ({HF_REPO_ID})...")
+            from huggingface_hub import hf_hub_download
+            weights_path = hf_hub_download(repo_id=HF_REPO_ID, filename="model.safetensors")
+
+        # 2. Resolve tokenizer (local or Hugging Face Hub)
+        if not os.path.exists(tokenizer_path):
+            logger.info("Local tokenizer not found at %s. Downloading from Hugging Face Hub: %s...", tokenizer_path, HF_REPO_ID)
+            print(f"[Suicide Risk Detector] Downloading tokenizer.json from Hugging Face ({HF_REPO_ID})...")
+            from huggingface_hub import hf_hub_download
+            tokenizer_path = hf_hub_download(repo_id=HF_REPO_ID, filename="tokenizer.json")
+
         logger.info("Loading suicide_risk_bert weights and tokenizer...")
         _WEIGHTS = load_file(weights_path)
         _TOKENIZER = tokenizers.Tokenizer.from_file(tokenizer_path)
         logger.info("suicide_risk_bert model loaded successfully (NumPy inference engine).")
+        print("[Suicide Risk Detector] Model and tokenizer loaded successfully.")
         return _WEIGHTS, _TOKENIZER
     except Exception as exc:
         logger.error("Failed to load suicide_risk_bert model: %s", exc)
+        print(f"[Suicide Risk Detector] Error loading model: {exc}")
         return None, None
 
 
