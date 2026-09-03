@@ -3,22 +3,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/api_service.dart';
 
-
-
 class AuthUser {
-
   const AuthUser({
-
     required this.id,
-
     required this.name,
-
     required this.email,
     this.emergencyContact,
-
   });
-
-
 
   final String id;
 
@@ -26,13 +17,9 @@ class AuthUser {
 
   final String email;
   final String? emergencyContact;
-
 }
 
-
-
 class AuthProvider extends ChangeNotifier {
-
   AuthProvider({ApiService? api}) : _api = api ?? ApiService() {
     _init();
   }
@@ -47,14 +34,24 @@ class AuthProvider extends ChangeNotifier {
       final email = prefs.getString('user_email');
       if (token != null && userId != null && name != null && email != null) {
         _token = token;
-        _user = AuthUser(id: userId, name: name, email: email, emergencyContact: prefs.getString('emergency_contact'));
+        _user = AuthUser(
+            id: userId,
+            name: name,
+            email: email,
+            emergencyContact: prefs.getString('emergency_contact'));
         _api.setToken(_token);
         try {
           final profile = await _api.getProfile();
-          _user = AuthUser(id: userId, name: profile.name, email: profile.email, emergencyContact: profile.emergencyContact);
+          _user = AuthUser(
+              id: userId,
+              name: profile.name,
+              email: profile.email,
+              emergencyContact: profile.emergencyContact);
           await prefs.setString('user_name', profile.name);
           await prefs.setString('user_email', profile.email);
-          if (profile.emergencyContact != null) await prefs.setString('emergency_contact', profile.emergencyContact!);
+          if (profile.emergencyContact != null)
+            await prefs.setString(
+                'emergency_contact', profile.emergencyContact!);
         } catch (_) {}
       }
       _isReady = true;
@@ -62,12 +59,7 @@ class AuthProvider extends ChangeNotifier {
     }();
   }
 
-
-
-
   final ApiService _api;
-
-
 
   AuthUser? _user;
 
@@ -75,8 +67,6 @@ class AuthProvider extends ChangeNotifier {
 
   bool _isLoading = false;
   bool _isReady = false;
-
-
 
   AuthUser? get user => _user;
 
@@ -91,66 +81,43 @@ class AuthProvider extends ChangeNotifier {
 
   ApiService get api => _api;
 
-
-
   Future<String?> signUp({
-
     required String name,
-
     required String email,
-
     required String password,
-
+    required String emergencyContact,
   }) async {
-
     final normalizedEmail = email.trim().toLowerCase();
 
     if (name.trim().isEmpty) {
-
       return 'Please enter your name';
-
     }
 
     if (!_isValidEmail(normalizedEmail)) {
-
       return 'Please enter a valid email';
-
     }
 
     if (password.length < 6) {
-
       return 'Password must be at least 6 characters';
-
     }
-
-
 
     _isLoading = true;
 
     notifyListeners();
 
-
-
     try {
-
       final result = await _api.signUp(
-
         name: name,
-
         email: normalizedEmail,
-
         password: password,
-
+        emergencyContact: emergencyContact.trim(),
       );
 
       _user = AuthUser(
-
         id: result.userId,
-
         name: result.name,
-
         email: result.email,
-
+        emergencyContact: emergencyContact.trim(),
       );
 
       _token = result.token;
@@ -163,116 +130,69 @@ class AuthProvider extends ChangeNotifier {
       await prefs.setString('user_email', _user!.email);
 
       return null;
-
     } on ApiException catch (e) {
-
       return e.message;
-
     } catch (_) {
-
       return 'Could not connect to server. Is the backend running?';
-
     } finally {
-
       _isLoading = false;
 
       notifyListeners();
-
     }
-
   }
 
-
-
   Future<String?> login({
-
     required String email,
-
     required String password,
-
   }) async {
-
     final normalizedEmail = email.trim().toLowerCase();
 
     if (!_isValidEmail(normalizedEmail)) {
-
       return 'Please enter a valid email';
-
     }
 
     if (password.isEmpty) {
-
       return 'Please enter your password';
-
     }
-
-
 
     _isLoading = true;
 
     notifyListeners();
 
-
-
     try {
-
       final result = await _api.login(
-
         email: normalizedEmail,
-
         password: password,
-
       );
 
       _user = AuthUser(
-
         id: result.userId,
-
         name: result.name,
-
         email: result.email,
-
       );
 
       _token = result.token;
-        _api.setToken(_token);
-        // persist session
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('auth_token', _token!);
-        await prefs.setString('user_id', _user!.id);
-        await prefs.setString('user_name', _user!.name);
-        await prefs.setString('user_email', _user!.email);
+      _api.setToken(_token);
+      // persist session
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('auth_token', _token!);
+      await prefs.setString('user_id', _user!.id);
+      await prefs.setString('user_name', _user!.name);
+      await prefs.setString('user_email', _user!.email);
 
       return null;
-
     } on ApiException catch (e) {
-
       return e.message;
-
     } catch (_) {
-
       return 'Could not connect to server. Is the backend running?';
-
     } finally {
-
       _isLoading = false;
 
       notifyListeners();
-
     }
-
   }
 
-
-
   Future<void> logout() async {
-    // Try to clear selected theme on server so future logins start default
-    try {
-      await _api.clearSelectedTheme();
-    } catch (_) {
-      // ignore errors; still proceed with local logout
-    }
-
     _user = null;
 
     _token = null;
@@ -288,27 +208,55 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<String?> updateProfile({required String name, required String email, required String emergencyContact}) async {
+  Future<String?> updateProfile(
+      {required String name,
+      required String email,
+      required String emergencyContact}) async {
     try {
-      final result = await _api.updateProfile(name: name.trim(), email: email.trim(), emergencyContact: emergencyContact.trim());
-      _user = AuthUser(id: _user!.id, name: result.name, email: result.email, emergencyContact: result.emergencyContact);
+      final result = await _api.updateProfile(
+          name: name.trim(),
+          email: email.trim(),
+          emergencyContact: emergencyContact.trim());
+      _user = AuthUser(
+          id: _user!.id,
+          name: result.name,
+          email: result.email,
+          emergencyContact: result.emergencyContact);
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('user_name', result.name);
       await prefs.setString('user_email', result.email);
-      if (result.emergencyContact == null || result.emergencyContact!.isEmpty) { await prefs.remove('emergency_contact'); } else { await prefs.setString('emergency_contact', result.emergencyContact!); }
+      if (result.emergencyContact == null || result.emergencyContact!.isEmpty) {
+        await prefs.remove('emergency_contact');
+      } else {
+        await prefs.setString('emergency_contact', result.emergencyContact!);
+      }
       notifyListeners();
       return null;
-    } on ApiException catch (e) { return e.message; } catch (_) { return 'Could not save profile changes.'; }
+    } on ApiException catch (e) {
+      return e.message;
+    } catch (_) {
+      return 'Could not save profile changes.';
+    }
   }
 
-
+  Future<String?> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    try {
+      await _api.changePassword(
+        currentPassword: currentPassword,
+        newPassword: newPassword,
+      );
+      return null;
+    } on ApiException catch (e) {
+      return e.message;
+    } catch (_) {
+      return 'Could not change your password.';
+    }
+  }
 
   bool _isValidEmail(String email) {
-
     return RegExp(r'^[^@]+@[^@]+\.[^@]+$').hasMatch(email);
-
   }
-
 }
-
-

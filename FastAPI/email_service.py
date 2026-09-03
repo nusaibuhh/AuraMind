@@ -36,6 +36,7 @@ def send_emergency_checkin_email(
         logger.warning("No valid emergency contact email provided. Skipping email dispatch.")
         return False
 
+
     api_key = get_resend_api_key()
     if not api_key:
         print("[Email Service] RESEND_API_KEY is not configured. Skipping email.")
@@ -129,4 +130,44 @@ def send_emergency_checkin_email(
     except Exception as exc:
         print(f"[Email Service] Exception sending email: {exc}")
         logger.error("Failed to send Resend emergency alert email: %s", exc)
+        return False
+
+
+def send_practitioner_suicide_alert_email(
+    to_email: str,
+    user_name: str,
+    user_email: str,
+) -> bool:
+    """Notify a clinician connected to the user when a risk scan is positive."""
+    to_email = (to_email or "").strip()
+    if not to_email or "@" not in to_email:
+        return False
+    api_key = get_resend_api_key()
+    if not api_key:
+        logger.warning("RESEND_API_KEY is not configured; practitioner alert skipped")
+        return False
+    subject = "AuraMind safety alert: please contact your patient"
+    text_body = (
+        f"A suicide-risk signal was detected in a journal entry from {user_name} ({user_email}).\n\n"
+        "Please contact the person promptly and follow your clinical safety protocol. "
+        "This automated alert is not a diagnosis."
+    )
+    payload = {
+        "from": get_resend_from_email(),
+        "to": [to_email],
+        "subject": subject,
+        "text": text_body,
+        "html": f"<p>A suicide-risk signal was detected in a journal entry from <strong>{user_name}</strong> ({user_email}).</p><p>Please contact the person promptly and follow your clinical safety protocol.</p><p>This automated alert is not a diagnosis.</p>",
+    }
+    try:
+        request = urllib.request.Request(
+            RESEND_API_URL,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=10.0) as response:
+            return response.status in (200, 201)
+    except Exception as exc:
+        logger.error("Failed to send practitioner safety alert: %s", exc)
         return False

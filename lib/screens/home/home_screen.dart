@@ -4,14 +4,13 @@ import 'package:provider/provider.dart';
 import '../../models/best_self_vision.dart';
 import '../../models/question.dart';
 import '../../providers/auth_provider.dart';
-import '../auth/login_screen.dart';
 import '../../providers/theme_provider.dart';
 import '../checkin/intro_screen.dart';
-import '../sleep/log_sleep_screen.dart';
-import '../sleep/sleep_insights_screen.dart';
-import '../sleep/sleep_history_screen.dart';
+import '../sleep/sleep_tracking_screen.dart';
 import '../breathing/breathing_screen.dart';
 import '../grounding/grounding_screen.dart';
+import '../behavioral_activation/behavioral_activation_screen.dart';
+import '../savoring/savoring_log_screen.dart';
 import '../community/community_forum_screen.dart';
 import '../relaxation/muscle_relaxation_screen.dart';
 import '../momentum/mood_momentum_walk_screen.dart';
@@ -20,7 +19,6 @@ import '../exercises/exercises_screen.dart';
 import '../journal/journal_screen.dart';
 import '../profile/profile_screen.dart';
 import '../kindness/kindness_wheel_screen.dart';
-import '../consultations/practitioner_finder_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -41,7 +39,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _loadBestPossibleSelf() async {
     try {
-      final visions = await context.read<AuthProvider>().api.getBestSelfVisions();
+      final visions =
+          await context.read<AuthProvider>().api.getBestSelfVisions();
       if (mounted) setState(() => _bestPossibleSelves = visions);
     } catch (_) {
       // A missing server should not stop the home screen from rendering.
@@ -68,19 +67,92 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _selectedIndex = index);
   }
 
-  List<({String title, String subtitle, IconData icon, Color color, VoidCallback onTap})> _recommendations(MentalHealthCategory category) {
-    final grounding = (title: 'Grounding\n5-4-3-2-1', subtitle: 'Be present', icon: Icons.visibility_outlined, color: const Color(0xFF8A74B8), onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const GroundingScreen())));
-    final breathing = (title: 'Breathing\nExercise', subtitle: '3 minutes', icon: Icons.air_rounded, color: const Color(0xFF6D8E71), onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const BreathingScreen())));
-    final bestSelf = (title: 'Best Possible\nSelf', subtitle: 'Future vision', icon: Icons.auto_awesome_rounded, color: const Color(0xFFD39B42), onTap: _openBestPossibleSelf);
-    final walk = (title: 'Mood Momentum\nWalk', subtitle: '5–10 minutes', icon: Icons.directions_walk_rounded, color: const Color(0xFF507C67), onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MoodMomentumWalkScreen())));
-    final relaxation = (title: 'Muscle\nRelaxation', subtitle: 'Release tension', icon: Icons.self_improvement_rounded, color: const Color(0xFF694A70), onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MuscleRelaxationScreen())));
-    // Module 3 tools are intentionally not returned here. This list is shown
-    // under the heading "Recommended exercises", while the Kindness Wheel
-    // and Practitioner Finder are wellbeing/support tools rather than exercises.
+  List<
+      ({
+        String title,
+        String subtitle,
+        IconData icon,
+        Color color,
+        VoidCallback onTap
+      })> _recommendations(MentalHealthCategory category) {
+    final grounding = (
+      title: 'Grounding\n5-4-3-2-1',
+      subtitle: 'Be present',
+      icon: Icons.visibility_outlined,
+      color: const Color(0xFF8A74B8),
+      onTap: () => Navigator.push(
+          context, MaterialPageRoute(builder: (_) => const GroundingScreen()))
+    );
+    final breathing = (
+      title: 'Box\nBreathing',
+      subtitle: '3 minutes',
+      icon: Icons.air_rounded,
+      color: const Color(0xFF6D8E71),
+      onTap: () => Navigator.push(
+          context, MaterialPageRoute(builder: (_) => const BreathingScreen()))
+    );
+    final bestSelf = (
+      title: 'Best Possible\nSelf',
+      subtitle: 'Future vision',
+      icon: Icons.auto_awesome_rounded,
+      color: const Color(0xFFD39B42),
+      onTap: _openBestPossibleSelf
+    );
+    final walk = (
+      title: '5–10 Minute\nWalk',
+      subtitle: 'Build momentum',
+      icon: Icons.directions_walk_rounded,
+      color: const Color(0xFF507C67),
+      onTap: () => Navigator.push(context,
+          MaterialPageRoute(builder: (_) => const MoodMomentumWalkScreen()))
+    );
+    final relaxation = (
+      title: 'Muscle\nRelaxation',
+      subtitle: 'Release tension',
+      icon: Icons.self_improvement_rounded,
+      color: const Color(0xFF694A70),
+      onTap: () => Navigator.push(context,
+          MaterialPageRoute(builder: (_) => const MuscleRelaxationScreen()))
+    );
     return switch (category) {
-      MentalHealthCategory.depression => [walk, grounding, breathing],
-      MentalHealthCategory.anxiety || MentalHealthCategory.stress => [grounding, relaxation, breathing],
-      MentalHealthCategory.normal => [bestSelf, grounding, breathing],
+      MentalHealthCategory.depression => [
+          (
+            title: 'Behavioral\nActivation',
+            subtitle: 'One tiny step',
+            icon: Icons.wb_sunny_outlined,
+            color: const Color(0xFF52875C),
+            onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const BehavioralActivationScreen()))
+          ),
+          walk,
+          breathing,
+        ],
+      MentalHealthCategory.anxiety || MentalHealthCategory.stress => [
+          grounding,
+          relaxation,
+          breathing
+        ],
+      MentalHealthCategory.normal => [
+          (
+            title: 'Three Good\nThings',
+            subtitle: 'Notice the good',
+            icon: Icons.auto_awesome_rounded,
+            color: const Color(0xFFC88722),
+            onTap: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const SavoringLogScreen()))
+          ),
+          bestSelf,
+          (
+            title: 'Kindness\nWheel',
+            subtitle: 'One small act',
+            icon: Icons.favorite_rounded,
+            color: const Color(0xFFD16A7A),
+            onTap: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const KindnessWheelScreen()))
+          ),
+        ],
     };
   }
 
@@ -90,7 +162,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final palette = context.watch<AppThemeProvider>().palette;
     final user = context.watch<AuthProvider>().user;
     final firstName = user?.name.split(' ').first ?? '';
-    final recommended = _recommendations(context.watch<AppThemeProvider>().wellbeingCategory);
+    final recommended =
+        _recommendations(context.watch<AppThemeProvider>().wellbeingCategory);
 
     return Scaffold(
       backgroundColor: palette.background,
@@ -118,20 +191,19 @@ class _HomeScreenState extends State<HomeScreen> {
                         greeting: _greeting(),
                         name: firstName,
                         accent: theme.colorScheme.primary,
-                        onProfileTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfileScreen())),
                       ),
                       const SizedBox(height: 18),
-                      _ReminderCard(accent: theme.colorScheme.primary, text: "It's okay to take a break. You are still doing your best."),
+                      _ReminderCard(
+                          accent: theme.colorScheme.primary,
+                          text:
+                              "It's okay to take a break. You are still doing your best."),
                       const SizedBox(height: 18),
-                      _CommunityForumCard(
+                      _SleepTrackingCard(
                         accent: theme.colorScheme.primary,
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => const CommunityForumScreen(),
-                            ),
-                          );
-                        },
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                              builder: (_) => const SleepTrackingScreen()),
+                        ),
                       ),
                       if (_bestPossibleSelves.isNotEmpty) ...[
                         const SizedBox(height: 18),
@@ -141,7 +213,11 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ],
                       const SizedBox(height: 18),
-                      _QuickCheckInCard(palette: palette, onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const IntroScreen()))),
+                      _QuickCheckInCard(
+                          palette: palette,
+                          onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                  builder: (_) => const IntroScreen()))),
                       const SizedBox(height: 18),
                       const _SectionTitle(
                         title: 'Recommended exercises',
@@ -153,7 +229,8 @@ class _HomeScreenState extends State<HomeScreen> {
                           for (var i = 0; i < recommended.length; i++) ...[
                             Expanded(
                               child: _RecommendationTile(
-                                background: recommended[i].color.withValues(alpha: .17),
+                                background:
+                                    recommended[i].color.withValues(alpha: .17),
                                 icon: recommended[i].icon,
                                 iconColor: recommended[i].color,
                                 title: recommended[i].title,
@@ -161,49 +238,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                 onTap: recommended[i].onTap,
                               ),
                             ),
-                            if (i < recommended.length - 1) const SizedBox(width: 12),
+                            if (i < recommended.length - 1)
+                              const SizedBox(width: 12),
                           ],
-                        ],
-                      ),
-                      const SizedBox(height: 22),
-                      const _SectionTitle(
-                        title: 'Wellbeing tools & support',
-                        subtitle: 'Explore planning and professional-care support',
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _RecommendationTile(
-                              background: const Color(0xFFD16A7A).withValues(alpha: .17),
-                              icon: Icons.favorite_rounded,
-                              iconColor: const Color(0xFFD16A7A),
-                              title: 'Kindness\nWheel',
-                              subtitle: 'One small act',
-                              onTap: () => Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => const KindnessWheelScreen(),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _RecommendationTile(
-                              background: const Color(0xFF3F7FA3).withValues(alpha: .17),
-                              icon: Icons.location_searching_rounded,
-                              iconColor: const Color(0xFF3F7FA3),
-                              title: 'Practitioner\nFinder',
-                              subtitle: 'Psychiatrists near me',
-                              onTap: () => Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => const PractitionerFinderScreen(),
-                                ),
-                              ),
-                            ),
-                          ),
                         ],
                       ),
                     ],
@@ -227,13 +264,11 @@ class _TopHeader extends StatelessWidget {
     required this.greeting,
     required this.name,
     required this.accent,
-    required this.onProfileTap,
   });
 
   final String greeting;
   final String name;
   final Color accent;
-  final VoidCallback onProfileTap;
 
   @override
   Widget build(BuildContext context) {
@@ -278,13 +313,6 @@ class _TopHeader extends StatelessWidget {
         const SizedBox(width: 12),
         Row(
           children: [
-            _CircleIconButton(
-              icon: Icons.person_rounded,
-              background: const Color(0xFFE8F0E2),
-              iconColor: const Color(0xFF5F7F63),
-              onTap: onProfileTap,
-            ),
-            const SizedBox(width: 10),
             Stack(
               clipBehavior: Clip.none,
               children: [
@@ -305,22 +333,6 @@ class _TopHeader extends StatelessWidget {
                       shape: BoxShape.circle,
                     ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                _CircleIconButton(
-                  icon: Icons.logout_rounded,
-                  background: const Color(0xFFF8EDEB),
-                  iconColor: const Color(0xFFE45D52),
-                  onTap: () {
-                    // immediate logout and navigate to login
-                    final auth = context.read<AuthProvider>();
-                    auth.logout();
-                    context.read<AppThemeProvider>().resetCheckIn();
-                    Navigator.of(context).pushAndRemoveUntil(
-                      MaterialPageRoute(builder: (_) => const LoginScreen()),
-                      (route) => false,
-                    );
-                  },
                 ),
               ],
             ),
@@ -483,12 +495,14 @@ class _PinnedBestSelfCard extends StatelessWidget {
                     vision.vision.trim(),
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(height: 1.35, color: Color(0xFF42524B)),
+                    style:
+                        const TextStyle(height: 1.35, color: Color(0xFF42524B)),
                   ),
                   const SizedBox(height: 9),
                   const Text(
                     'View your vision  ›',
-                    style: TextStyle(color: Color(0xFF3D755E), fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                        color: Color(0xFF3D755E), fontWeight: FontWeight.w600),
                   ),
                 ],
               ),
@@ -856,7 +870,7 @@ class _BottomNavBar extends StatelessWidget {
     final theme = Theme.of(context);
     final items = [
       (Icons.home_rounded, 'Home'),
-      (Icons.bedtime_rounded, 'Sleep'),
+      (Icons.forum_outlined, 'Community'),
       (Icons.spa_outlined, 'Exercises'),
       (Icons.menu_book_outlined, 'Journal'),
       (Icons.person_outline_rounded, 'Profile'),
@@ -888,8 +902,10 @@ class _BottomNavBar extends StatelessWidget {
                 onTap(index);
                 // Handle navigation for tabs
                 if (index == 1) {
-                  // Navigate to sleep tracking
-                  _handleSleepNavigation(context);
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                        builder: (_) => const CommunityForumScreen()),
+                  );
                 } else if (index == 2) {
                   Navigator.of(context).push(
                     MaterialPageRoute(
@@ -931,72 +947,6 @@ class _BottomNavBar extends StatelessWidget {
             ),
           );
         }),
-      ),
-    );
-  }
-
-  void _handleSleepNavigation(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      builder: (context) => Container(
-        color: Colors.white,
-        child: SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                  'Sleep Tracking',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-              ),
-              ListTile(
-                leading: const Icon(Icons.edit),
-                title: const Text('Log Sleep'),
-                subtitle: const Text('Record your sleep duration and quality'),
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const LogSleepScreen(),
-                    ),
-                  );
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.insights),
-                title: const Text('Sleep & Mood Insights'),
-                subtitle: const Text('View your sleep patterns and wellness'),
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const SleepInsightsScreen(),
-                    ),
-                  );
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.history),
-                title: const Text('Sleep History'),
-                subtitle: const Text('View all your past sleep logs'),
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const SleepHistoryScreen(),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 16),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -1205,8 +1155,8 @@ class _MoodMomentumCard extends StatelessWidget {
   }
 }
 
-class _CommunityForumCard extends StatelessWidget {
-  const _CommunityForumCard({
+class _SleepTrackingCard extends StatelessWidget {
+  const _SleepTrackingCard({
     required this.accent,
     required this.onTap,
   });
@@ -1246,7 +1196,7 @@ class _CommunityForumCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Anonymous Community',
+                      'Sleep Tracking',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w800,
@@ -1254,7 +1204,7 @@ class _CommunityForumCard extends StatelessWidget {
                     ),
                     SizedBox(height: 4),
                     Text(
-                      'Share and connect without exposing your identity.',
+                      'See your sleep chart, history, and log a new night.',
                       style: TextStyle(
                         fontSize: 12.5,
                         height: 1.35,
@@ -1276,4 +1226,3 @@ class _CommunityForumCard extends StatelessWidget {
     );
   }
 }
-

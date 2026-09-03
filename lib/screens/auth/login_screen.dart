@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/auth_provider.dart';
+import '../../providers/theme_provider.dart';
 import 'signup_screen.dart';
 import '../checkin/intro_screen.dart';
+import '../home/home_screen.dart';
 import '../admin/admin_panel_screen.dart';
+import '../practitioner/practitioner_dashboard_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -30,6 +33,20 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
 
+    final email = _emailController.text.trim().toLowerCase();
+    if (email == 'admin@test.com' && _passwordController.text == 'admin123#') {
+      final studentId = await _askForAdminStudentId();
+      if (!mounted || studentId == null) return;
+      Navigator.of(context).pushReplacement(MaterialPageRoute(
+        builder: (_) => AdminPanelScreen(
+          initialEmail: email,
+          initialPassword: _passwordController.text,
+          initialStudentId: studentId,
+        ),
+      ));
+      return;
+    }
+
     setState(() => _isLoading = true);
 
     final error = await context.read<AuthProvider>().login(
@@ -41,14 +58,101 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = false);
 
     if (error != null) {
+      final license = await _askForPractitionerLicense();
+      if (!mounted || license == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error), behavior: SnackBarBehavior.floating),
+        );
+        return;
+      }
+      try {
+        final api = context.read<AuthProvider>().api;
+        final result = await api.practitionerLogin(
+          email: _emailController.text.trim(),
+          password: _passwordController.text,
+          licenseNumber: license,
+        );
+        if (!mounted) return;
+        Navigator.of(context).pushReplacement(MaterialPageRoute(
+          builder: (_) => PractitionerDashboardScreen(
+            initialEmail: _emailController.text.trim(),
+            initialPassword: _passwordController.text,
+            initialLicense: license,
+          ),
+        ));
+        return;
+      } catch (_) {
+        // Preserve the normal user-login error when practitioner verification fails.
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(error), behavior: SnackBarBehavior.floating),
       );
     } else {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const IntroScreen()),
-      );
+      final auth = context.read<AuthProvider>();
+      final themeProvider = context.read<AppThemeProvider>();
+      await themeProvider.loadSavedTheme(auth.api);
+      if (!mounted) return;
+      if (themeProvider.hasCompletedCheckIn) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const HomeScreen()),
+        );
+      } else {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const IntroScreen()),
+        );
+      }
     }
+  }
+
+  Future<String?> _askForPractitionerLicense() async {
+    final controller = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Practitioner verification'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(labelText: 'License number'),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () =>
+                  Navigator.pop(dialogContext, controller.text.trim()),
+              child: const Text('Verify')),
+        ],
+      ),
+    );
+    controller.dispose();
+    return result;
+  }
+
+  Future<String?> _askForAdminStudentId() async {
+    final controller = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Administrator verification'),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(labelText: 'Student ID'),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () =>
+                  Navigator.pop(dialogContext, controller.text.trim()),
+              child: const Text('Continue')),
+        ],
+      ),
+    );
+    controller.dispose();
+    return result;
   }
 
   @override
@@ -162,20 +266,6 @@ class _LoginScreenState extends State<LoginScreen> {
                               fontWeight: FontWeight.w600,
                             ),
                           ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Center(
-                  child: TextButton.icon(
-                    onPressed: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const AdminPanelScreen(),
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.admin_panel_settings_outlined, size: 18),
-                    label: const Text('Administrator Portal'),
                   ),
                 ),
                 const SizedBox(height: 12),

@@ -2,11 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/consultation.dart';
+import '../../models/theme_palette.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/consultation_provider.dart';
+import '../../providers/theme_provider.dart';
+import '../auth/login_screen.dart';
 import '../consultations/my_consultations_screen.dart';
 import '../consultations/psychiatrist_list_screen.dart';
 import '../home/mood_analytics_screen.dart';
+import '../consultations/practitioner_finder_screen.dart';
+import 'settings_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -16,53 +21,18 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  late final TextEditingController _name;
-  late final TextEditingController _email;
-  late final TextEditingController _emergency;
-  bool _saving = false;
-
   @override
   void initState() {
     super.initState();
-    final user = context.read<AuthProvider>().user!;
-    _name = TextEditingController(text: user.name);
-    _email = TextEditingController(text: user.email);
-    _emergency = TextEditingController(text: user.emergencyContact ?? '');
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<ConsultationProvider>().loadBookings();
     });
   }
 
-  @override
-  void dispose() {
-    _name.dispose();
-    _email.dispose();
-    _emergency.dispose();
-    super.dispose();
-  }
-
-  Future<void> _save() async {
-    final emergency = _emergency.text.trim();
-    if (emergency.isNotEmpty && !emergency.contains('@')) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter a valid emergency contact email'),
-        ),
-      );
-      return;
-    }
-
-    setState(() => _saving = true);
-    final error = await context.read<AuthProvider>().updateProfile(
-          name: _name.text,
-          email: _email.text,
-          emergencyContact: _emergency.text,
-        );
-    if (!mounted) return;
-    setState(() => _saving = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(error ?? 'Profile saved')),
-    );
+  Future<void> _openSettings() async {
+    await Navigator.push(
+        context, MaterialPageRoute(builder: (_) => const SettingsScreen()));
+    if (mounted) setState(() {});
   }
 
   Future<void> _openPsychiatrists() async {
@@ -85,9 +55,65 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  Future<void> _logout() async {
+    await context.read<AuthProvider>().logout();
+    if (!mounted) return;
+    context.read<AppThemeProvider>().resetCheckIn();
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (route) => false,
+    );
+  }
+
+  Future<void> _changeTheme() async {
+    final palette = await showModalBottomSheet<ThemePalette>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => ListView(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+        children: [
+          const Text('Choose a theme',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 12),
+          ...allThemePalettes.map((item) => ListTile(
+                leading: CircleAvatar(backgroundColor: item.primary),
+                title: Text(item.name),
+                subtitle: Text(item.category.name),
+                trailing: item.id == context.read<AppThemeProvider>().palette.id
+                    ? const Icon(Icons.check)
+                    : null,
+                onTap: () => Navigator.pop(sheetContext, item),
+              )),
+        ],
+      ),
+    );
+    if (palette == null || !mounted) return;
+    try {
+      await context.read<AppThemeProvider>().changeTheme(
+            palette,
+            context.read<AuthProvider>().api,
+          );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not change theme.')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Profile')),
+        appBar: AppBar(
+          title: const Text('Profile'),
+          actions: [
+            IconButton(
+              tooltip: 'Settings',
+              icon: const Icon(Icons.settings_outlined),
+              onPressed: _openSettings,
+            ),
+          ],
+        ),
         body: ListView(
           padding: const EdgeInsets.all(20),
           children: [
@@ -95,38 +121,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
               radius: 36,
               child: Icon(Icons.person, size: 38),
             ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _logout,
+              icon: const Icon(Icons.logout_rounded),
+              label: const Text('Log out'),
+            ),
             const SizedBox(height: 22),
-            TextField(
-              controller: _name,
-              decoration: const InputDecoration(labelText: 'Name'),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: _email,
-              keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(labelText: 'Email'),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: _emergency,
-              keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(
-                labelText: 'Emergency contact email',
-                hintText: 'e.g. contact@example.com',
-                helperText: 'Optional',
-              ),
-            ),
-            const SizedBox(height: 20),
-            FilledButton(
-              onPressed: _saving ? null : _save,
-              child: Text(_saving ? 'Saving…' : 'Save changes'),
-            ),
-            const SizedBox(height: 28),
             const Text(
               'Wellbeing',
               style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 8),
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.palette_outlined),
+                title: const Text('Change theme'),
+                subtitle: const Text('Choose from all available themes'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: _changeTheme,
+              ),
+            ),
+            const SizedBox(height: 12),
             Card(
               child: ListTile(
                 leading: const Icon(Icons.insights_rounded),
@@ -138,6 +154,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   MaterialPageRoute(
                     builder: (_) => const MoodAnalyticsScreen(),
                   ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.location_searching_rounded),
+                title: const Text('Find a practitioner near me'),
+                subtitle:
+                    const Text('Explore nearby mental-health practitioners'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const PractitionerFinderScreen()),
                 ),
               ),
             ),
