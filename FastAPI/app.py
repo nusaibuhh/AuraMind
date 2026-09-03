@@ -68,7 +68,7 @@ MYSQL_CONFIG = {
 # Allow CORS for development (adjust in production)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://auramind0.netlify.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
