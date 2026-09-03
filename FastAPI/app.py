@@ -39,6 +39,14 @@ from risk_detector import scan_and_alert_emergency_contact
 from moderation_detector import analyze_content
 
 app = FastAPI(title="AuraMind API")
+
+
+@app.on_event("startup")
+def startup_event():
+    """Initialize database tables on app startup."""
+    connect_db()
+
+
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
 
