@@ -97,7 +97,7 @@ class ApiService {
     );
   }
 
-  Future<({String userId, String name, String email, String token})> login({
+  Future<({String userId, String name, String email, String token, String? emergencyContact})> login({
     required String email,
     required String password,
   }) async {
@@ -113,6 +113,7 @@ class ApiService {
       name: data['name'] as String,
       email: data['email'] as String,
       token: data['access_token'] as String,
+      emergencyContact: data['emergency_contact'] as String?,
     );
   }
 
@@ -913,6 +914,30 @@ class ApiService {
     );
     final data = await _handleResponse(response) as List;
     return data.map((item) => Map<String, dynamic>.from(item as Map)).toList();
+  }
+
+  Future<void> editPractitionerSlot({
+    required String slotId,
+    required DateTime startsAt,
+    required DateTime endsAt,
+  }) async {
+    final response = await _client.put(
+      Uri.parse('${ApiConfig.baseUrl}/practitioner/slots/$slotId'),
+      headers: _headers,
+      body: jsonEncode({
+        'starts_at': startsAt.toIso8601String(),
+        'ends_at': endsAt.toIso8601String(),
+      }),
+    );
+    await _handleResponse(response);
+  }
+
+  Future<void> deletePractitionerSlot(String slotId) async {
+    final response = await _client.delete(
+      Uri.parse('${ApiConfig.baseUrl}/practitioner/slots/$slotId'),
+      headers: _headers,
+    );
+    await _handleResponse(response);
   }
 
     Future<void> practitionerBookingAction(

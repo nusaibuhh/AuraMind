@@ -57,10 +57,19 @@ MYSQL_CONFIG = {
     "write_timeout": int(os.getenv("MYSQL_WRITE_TIMEOUT", "20")),
 }
 
-# Allow CORS for development (adjust in production)
+# Allow CORS for development and production
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://auramind0.netlify.app"],
+    allow_origins=[
+        "https://auramind0.netlify.app",
+        "http://localhost",
+        "http://localhost:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:8000",
+    ],
+    allow_origin_regex=r"^https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -1666,6 +1675,55 @@ def practitioner_slots(authorization: Optional[str] = Header(None)):
     return slots
 
 
+@app.put("/practitioner/slots/{slot_id}")
+def practitioner_edit_slot(slot_id: str, req: PractitionerSlotRequest, authorization: Optional[str] = Header(None)):
+    practitioner = _require_practitioner(authorization)
+    if req.ends_at <= req.starts_at:
+        raise HTTPException(status_code=400, detail="Slot end must be after slot start")
+    conn = connect_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT status, booking_id FROM CONSULTATION_SLOTS WHERE id=? AND practitioner_id=?", (slot_id, practitioner["id"]))
+    slot = c.fetchone()
+    if slot is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Slot not found")
+    if slot[0] != "free" or slot[1] is not None:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Cannot edit a booked or reserved slot")
+    c.execute("""SELECT id FROM CONSULTATION_SLOTS
+                 WHERE practitioner_id=? AND id <> ? AND status <> 'cancelled'
+                 AND starts_at < ? AND ends_at > ?""",
+              (practitioner["id"], slot_id, req.ends_at.isoformat(), req.starts_at.isoformat()))
+    if c.fetchone() is not None:
+        conn.close()
+        raise HTTPException(status_code=409, detail="Slot overlaps an existing slot")
+    c.execute("UPDATE CONSULTATION_SLOTS SET starts_at=?, ends_at=? WHERE id=? AND practitioner_id=?",
+              (req.starts_at.isoformat(), req.ends_at.isoformat(), slot_id, practitioner["id"]))
+    conn.commit()
+    conn.close()
+    return {"success": True, "slot_id": slot_id}
+
+
+@app.delete("/practitioner/slots/{slot_id}")
+def practitioner_delete_slot(slot_id: str, authorization: Optional[str] = Header(None)):
+    practitioner = _require_practitioner(authorization)
+    conn = connect_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT status, booking_id FROM CONSULTATION_SLOTS WHERE id=? AND practitioner_id=?", (slot_id, practitioner["id"]))
+    slot = c.fetchone()
+    if slot is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Slot not found")
+    if slot[0] != "free" or slot[1] is not None:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Cannot delete a booked or reserved slot")
+    c.execute("DELETE FROM CONSULTATION_SLOTS WHERE id=? AND practitioner_id=?", (slot_id, practitioner["id"]))
+    conn.commit()
+    conn.close()
+    return {"success": True, "message": "Slot removed successfully"}
+
+
+
 @app.get("/practitioner/bookings")
 def practitioner_bookings(authorization: Optional[str] = Header(None)):
     practitioner = _require_practitioner(authorization)
@@ -1781,7 +1839,7 @@ def login(req: LoginRequest):
     email_clean = req.email.strip().lower()
     pw_clean = req.password.strip()
 
-    c.execute("SELECT id, name, password, email FROM USERS WHERE LOWER(TRIM(email))=?", (email_clean,))
+    c.execute("SELECT id, name, password, email, emergency_contact FROM USERS WHERE LOWER(TRIM(email))=?", (email_clean,))
     row = c.fetchone()
 
     valid = False
@@ -1796,13 +1854,19 @@ def login(req: LoginRequest):
         conn.close()
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    user_id, name = row[0], row[1]
+    user_id, name, email, emergency_contact = row[0], row[1], row[3], row[4]
     token = uuid.uuid4().hex
     c.execute("UPDATE USERS SET token=? WHERE id=?", (token, user_id))
     conn.commit()
     conn.close()
 
-    return {"user_id": user_id, "name": name, "email": row[3], "access_token": token}
+    return {
+        "user_id": user_id,
+        "name": name,
+        "email": email,
+        "emergency_contact": emergency_contact,
+        "access_token": token,
+    }
 
 
 @app.put("/profile/me")

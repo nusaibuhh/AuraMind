@@ -132,8 +132,10 @@ class _BookingCard extends StatelessWidget {
     final statusColor = paid
         ? Colors.green
         : booking.status == 'confirmed'
-            ? Colors.orange
-            : Colors.blueGrey;
+            ? Colors.teal
+            : (booking.status == 'cancelled' || booking.status == 'expired'
+                ? Colors.red
+                : Colors.orange);
     return Card(
       margin: const EdgeInsets.only(bottom: 14),
       child: Padding(
@@ -152,7 +154,7 @@ class _BookingCard extends StatelessWidget {
                   ),
                 ),
                 Chip(
-                  label: Text(paid ? 'Paid' : _statusLabel(booking)),
+                  label: Text(_statusLabel(booking)),
                   backgroundColor: statusColor.withValues(alpha: 0.12),
                   side: BorderSide(color: statusColor.withValues(alpha: 0.4)),
                 ),
@@ -206,13 +208,14 @@ class _BookingCard extends StatelessWidget {
 String _statusLabel(ConsultationBooking booking) {
   if (booking.status == 'completed') return 'Appointment completed';
   if (booking.status == 'confirmed') {
-    return booking.isPaid ? 'Paid' : 'Appointment accepted';
+    return booking.isPaid ? 'Accepted · Paid' : 'Appointment accepted';
   }
+  if (booking.status == 'pending') return 'Pending confirmation';
   if (booking.status == 'pending_payment') return 'Awaiting payment';
   if (booking.status == 'expired') return 'Expired';
-  if (booking.status == 'cancelled') return 'Cancelled';
+  if (booking.status == 'cancelled') return 'Declined';
   if (booking.paymentStatus == 'review') return 'Under review';
-  return 'Payment due';
+  return 'Pending';
 }
 
 String _bookingDate(DateTime value) {

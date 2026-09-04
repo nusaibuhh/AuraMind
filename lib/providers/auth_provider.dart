@@ -169,6 +169,7 @@ class AuthProvider extends ChangeNotifier {
         id: result.userId,
         name: result.name,
         email: result.email,
+        emergencyContact: result.emergencyContact,
       );
 
       _token = result.token;
@@ -179,6 +180,23 @@ class AuthProvider extends ChangeNotifier {
       await prefs.setString('user_id', _user!.id);
       await prefs.setString('user_name', _user!.name);
       await prefs.setString('user_email', _user!.email);
+      if (_user!.emergencyContact != null && _user!.emergencyContact!.isNotEmpty) {
+        await prefs.setString('emergency_contact', _user!.emergencyContact!);
+      }
+
+      // Also sync profile in background to ensure latest emergency contact is captured
+      try {
+        final profile = await _api.getProfile();
+        _user = AuthUser(
+          id: _user!.id,
+          name: profile.name,
+          email: profile.email,
+          emergencyContact: profile.emergencyContact ?? _user!.emergencyContact,
+        );
+        if (_user!.emergencyContact != null && _user!.emergencyContact!.isNotEmpty) {
+          await prefs.setString('emergency_contact', _user!.emergencyContact!);
+        }
+      } catch (_) {}
 
       return null;
     } on ApiException catch (e) {

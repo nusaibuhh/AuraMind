@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../models/best_self_vision.dart';
 import '../../models/question.dart';
+import '../../models/theme_palette.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../checkin/intro_screen.dart';
@@ -167,89 +168,102 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       backgroundColor: palette.background,
-      body: SafeArea(
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                palette.background,
-                palette.background.withValues(alpha: 0.96),
-              ],
-            ),
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: [
+          _buildHomeView(context, palette, theme, firstName, recommended),
+          const CommunityForumScreen(),
+          const ExercisesScreen(),
+          const JournalScreen(),
+          const ProfileScreen(),
+        ],
+      ),
+      bottomNavigationBar: _BottomNavBar(
+        selectedIndex: _selectedIndex,
+        onTap: _handleNavTap,
+      ),
+    );
+  }
+
+  Widget _buildHomeView(
+    BuildContext context,
+    ThemePalette palette,
+    ThemeData theme,
+    String firstName,
+    List<({String title, String subtitle, IconData icon, Color color, VoidCallback onTap})> recommended,
+  ) {
+    return SafeArea(
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              palette.background,
+              palette.background.withValues(alpha: 0.96),
+            ],
           ),
+        ),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _TopHeader(
-                        greeting: _greeting(),
-                        name: firstName,
-                        accent: theme.colorScheme.primary,
-                      ),
-                      const SizedBox(height: 18),
-                      _ReminderCard(
-                          accent: theme.colorScheme.primary,
-                          text:
-                              "It's okay to take a break. You are still doing your best."),
-                      const SizedBox(height: 18),
-                      _SleepTrackingCard(
-                        accent: theme.colorScheme.primary,
-                        onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                              builder: (_) => const SleepTrackingScreen()),
-                        ),
-                      ),
-                      if (_bestPossibleSelves.isNotEmpty) ...[
-                        const SizedBox(height: 18),
-                        _PinnedBestSelfCard(
-                          vision: _bestPossibleSelves.first,
-                          onTap: _openBestPossibleSelf,
-                        ),
-                      ],
-                      const SizedBox(height: 18),
-                      _QuickCheckInCard(
-                          palette: palette,
-                          onTap: () => Navigator.of(context).push(
-                              MaterialPageRoute(
-                                  builder: (_) => const IntroScreen()))),
-                      const SizedBox(height: 18),
-                      const _SectionTitle(
-                        title: 'Recommended exercises',
-                        subtitle: 'Chosen for how you are feeling today',
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          for (var i = 0; i < recommended.length; i++) ...[
-                            Expanded(
-                              child: _RecommendationTile(
-                                background:
-                                    recommended[i].color.withValues(alpha: .17),
-                                icon: recommended[i].icon,
-                                iconColor: recommended[i].color,
-                                title: recommended[i].title,
-                                subtitle: recommended[i].subtitle,
-                                onTap: recommended[i].onTap,
-                              ),
-                            ),
-                            if (i < recommended.length - 1)
-                              const SizedBox(width: 12),
-                          ],
-                        ],
-                      ),
-                    ],
-                  ),
+              _TopHeader(
+                greeting: _greeting(),
+                name: firstName,
+                accent: theme.colorScheme.primary,
+              ),
+              const SizedBox(height: 18),
+              _ReminderCard(
+                  accent: theme.colorScheme.primary,
+                  text:
+                      "It's okay to take a break. You are still doing your best."),
+              const SizedBox(height: 18),
+              _SleepTrackingCard(
+                accent: theme.colorScheme.primary,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                      builder: (_) => const SleepTrackingScreen()),
                 ),
               ),
-              _BottomNavBar(
-                selectedIndex: _selectedIndex,
-                onTap: _handleNavTap,
+              if (_bestPossibleSelves.isNotEmpty) ...[
+                const SizedBox(height: 18),
+                _PinnedBestSelfCard(
+                  vision: _bestPossibleSelves.first,
+                  onTap: _openBestPossibleSelf,
+                ),
+              ],
+              const SizedBox(height: 18),
+              _QuickCheckInCard(
+                  palette: palette,
+                  onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                          builder: (_) => const IntroScreen()))),
+              const SizedBox(height: 18),
+              const _SectionTitle(
+                title: 'Recommended exercises',
+                subtitle: 'Chosen for how you are feeling today',
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  for (var i = 0; i < recommended.length; i++) ...[
+                    Expanded(
+                      child: _RecommendationTile(
+                        background:
+                            recommended[i].color.withValues(alpha: .17),
+                        icon: recommended[i].icon,
+                        iconColor: recommended[i].color,
+                        title: recommended[i].title,
+                        subtitle: recommended[i].subtitle,
+                        onTap: recommended[i].onTap,
+                      ),
+                    ),
+                    if (i < recommended.length - 1)
+                      const SizedBox(width: 12),
+                  ],
+                ],
               ),
             ],
           ),
@@ -898,32 +912,7 @@ class _BottomNavBar extends StatelessWidget {
 
           return Expanded(
             child: InkWell(
-              onTap: () {
-                onTap(index);
-                // Handle navigation for tabs
-                if (index == 1) {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                        builder: (_) => const CommunityForumScreen()),
-                  );
-                } else if (index == 2) {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const ExercisesScreen(),
-                    ),
-                  );
-                } else if (index == 3) {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const JournalScreen(),
-                    ),
-                  );
-                } else if (index == 4) {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const ProfileScreen()),
-                  );
-                }
-              },
+              onTap: () => onTap(index),
               borderRadius: BorderRadius.circular(16),
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 6),

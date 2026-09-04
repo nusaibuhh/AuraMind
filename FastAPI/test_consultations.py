@@ -339,3 +339,50 @@ def test_practitioner_accept_and_accept_cash():
     assert user_bookings[0]["payment"]["method"] == "cash"
     assert user_bookings[0]["payment"]["status"] == "paid"
 
+
+def test_practitioner_edit_and_delete_slot():
+    client = TestClient(app)
+    headers = _signup(client, "slot_edit_del")
+    catalog = client.get("/consultations/practitioners", headers=headers).json()
+    practitioner = catalog[0]
+
+    # Set auth_token for practitioner
+    conn = fastapi_app.connect_db_connection()
+    c = conn.cursor()
+    c.execute("UPDATE CONSULTATION_PRACTITIONERS SET auth_token='test_prac_slot_token' WHERE id=?", (practitioner["id"],))
+    conn.commit()
+
+    prac_headers = {"Authorization": "Bearer test_prac_slot_token"}
+
+    # Add slot
+    add_resp = client.post(
+        "/practitioner/slots",
+        headers=prac_headers,
+        json={
+            "starts_at": "2026-10-01T14:00:00",
+            "ends_at": "2026-10-01T14:30:00",
+        },
+    )
+    assert add_resp.status_code == 200
+    slot_id = add_resp.json()["slot_id"]
+
+    # Edit slot
+    edit_resp = client.put(
+        f"/practitioner/slots/{slot_id}",
+        headers=prac_headers,
+        json={
+            "starts_at": "2026-10-01T15:00:00",
+            "ends_at": "2026-10-01T15:30:00",
+        },
+    )
+    assert edit_resp.status_code == 200
+
+    # Delete slot
+    del_resp = client.delete(
+        f"/practitioner/slots/{slot_id}",
+        headers=prac_headers,
+    )
+    assert del_resp.status_code == 200
+    assert del_resp.json()["success"] is True
+
+
