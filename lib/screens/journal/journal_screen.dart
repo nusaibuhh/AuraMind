@@ -218,14 +218,16 @@ class _JournalScreenState extends State<JournalScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        leading: IconButton(
-          icon: Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: theme.colorScheme.onSurface,
-            size: 20,
-          ),
-          onPressed: () => Navigator.pop(context),
-        ),
+        leading: Navigator.canPop(context)
+            ? IconButton(
+                icon: Icon(
+                  Icons.arrow_back_ios_new_rounded,
+                  color: theme.colorScheme.onSurface,
+                  size: 20,
+                ),
+                onPressed: () => Navigator.pop(context),
+              )
+            : null,
         title: Text(
           'Journal & Reflections',
           style: TextStyle(
