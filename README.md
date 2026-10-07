@@ -1,6 +1,6 @@
 # AuraMind
 
-Interactive Mental Health App built with Flutter. Link: https://auraa-mind.netlify.app/
+Interactive Mental Health App built with Flutter.
 
 ## Features
 
