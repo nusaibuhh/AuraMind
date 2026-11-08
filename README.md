@@ -1,6 +1,6 @@
 # AuraMind
 
-Interactive Mental Health App built with Flutter.
+Interactive Mental Health App built with Flutter. Demo link: https://youtube.com/playlist?list=PLQ0FgkW9YS1g&si=zPS0ZkgGhywwuH8W
 
 ## Features
 
